@@ -1,9 +1,10 @@
 name: build
 
+# Релиз выпускается сам: когда в main приходит версия из version.properties,
+# для которой ещё нет тега vX.Y.Z, сборка создаёт тег и релиз с подписанным APK.
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -28,19 +29,27 @@ jobs:
 
       - name: Версия
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "VERSION_NAME=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-          else
-            echo "VERSION_NAME=0.0.${GITHUB_RUN_NUMBER}-dev" >> "$GITHUB_ENV"
-          fi
+          V=$(grep -E '^versionName=' version.properties | cut -d= -f2 | tr -d '[:space:]')
+          if [ -z "$V" ]; then echo "::error::Нет versionName в version.properties"; exit 1; fi
+          echo "VERSION_NAME=$V" >> "$GITHUB_ENV"
           echo "VERSION_CODE=$((GITHUB_RUN_NUMBER + 100))" >> "$GITHUB_ENV"
+          RELEASE=false
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            if git ls-remote --exit-code --tags origin "refs/tags/v$V" >/dev/null; then
+              echo "Тег v$V уже есть — релиз не выпускается"
+            else
+              RELEASE=true
+              echo "Новая версия $V — будет релиз"
+            fi
+          fi
+          echo "RELEASE=$RELEASE" >> "$GITHUB_ENV"
 
       - name: Ключ подписи
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            if [ "$RELEASE" = "true" ]; then
               echo "::error::Нет секрета KEYSTORE_BASE64 — релиз без своего ключа не выпускается"
               exit 1
             fi
@@ -61,12 +70,15 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: dayplan-${{ env.VERSION_NAME }}
+          name: dayplan-${{ env.VERSION_NAME }}-${{ github.run_number }}
           path: dayplan-*.apk
 
       - name: Релиз для Obtainium
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.RELEASE == 'true'
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: v${{ env.VERSION_NAME }}
+          target_commitish: ${{ github.sha }}
+          name: План дня ${{ env.VERSION_NAME }}
           files: dayplan-*.apk
           generate_release_notes: true

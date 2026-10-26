@@ -22,11 +22,7 @@
 
 ## Выпуск версии
 
-Сборка — GitHub Actions (`.github/workflows/build.yml`). Каждый пуш в `main` собирает APK как артефакт; тег `vX.Y.Z` выпускает релиз:
-
-```bash
-git tag v0.1.1 && git push origin v0.1.1
-```
+Сборка — GitHub Actions (`.github/workflows/build.yml`). Каждый пуш в `main` собирает APK как артефакт. Релиз выпускается сам: достаточно поднять версию в `version.properties` и отправить в `main` — сборка создаст тег `vX.Y.Z` и релиз с подписанным APK. Если тег этой версии уже есть, релиз не повторяется.
 
 Для подписи нужны четыре секрета репозитория (Settings → Secrets and variables → Actions):
 
