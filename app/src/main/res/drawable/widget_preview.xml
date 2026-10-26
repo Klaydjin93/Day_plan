@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Временное превью в списке виджетов; заменяется снимком настоящего виджета -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="250dp"
+    android:height="180dp"
+    android:viewportWidth="250"
+    android:viewportHeight="180">
+    <path android:fillColor="#FF0F0F0F" android:pathData="M16,0h218a16,16 0,0 1,16 16v148a16,16 0,0 1,-16 16h-218a16,16 0,0 1,-16 -16v-148a16,16 0,0 1,16 -16z" />
+    <path android:fillColor="#FFE8E8E8" android:pathData="M14,14h70v12h-70z" />
+    <path android:fillColor="#FF34D399" android:pathData="M14,38h60v10h-60z" />
+    <path android:fillColor="#FFA78BFA" android:pathData="M14,62h90v10h-90z" />
+    <path android:fillColor="#FF666666" android:pathData="M14,78h180v6h-180z" />
+    <path android:fillColor="#FF4ADE80" android:pathData="M14,104h10v10h-10z" />
+    <path android:fillColor="#FFE8E8E8" android:pathData="M30,106h120v6h-120z" />
+    <path android:fillColor="#FF4ADE80" android:pathData="M14,122h10v10h-10z" />
+    <path android:fillColor="#FFE8E8E8" android:pathData="M30,124h100v6h-100z" />
+    <path android:fillColor="#FF666666" android:pathData="M14,140h10v10h-10z" />
+    <path android:fillColor="#FF666666" android:pathData="M30,142h110v6h-110z" />
+</vector>

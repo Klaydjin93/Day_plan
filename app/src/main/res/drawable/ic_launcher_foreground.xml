@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Листок дня: шапка с полосами по типам сессий и три строки списка -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FF1E1E1E" android:pathData="M34,30h40a6,6 0,0 1,6 6v38a6,6 0,0 1,-6 6h-40a6,6 0,0 1,-6 -6v-38a6,6 0,0 1,6 -6z" />
+    <path android:fillColor="#FF38BDF8" android:pathData="M34,30h14v6h-20v0a6,6 0,0 1,6 -6z" />
+    <path android:fillColor="#FFA78BFA" android:pathData="M48,30h13v6h-13z" />
+    <path android:fillColor="#FFFB7185" android:pathData="M61,30h13a6,6 0,0 1,6 6v0h-19z" />
+    <path android:fillColor="#FF4ADE80" android:pathData="M36,47h6v6h-6z" />
+    <path android:fillColor="#FFE8E8E8" android:pathData="M46,48.5h26v3h-26z" />
+    <path android:fillColor="#FF4ADE80" android:pathData="M36,58h6v6h-6z" />
+    <path android:fillColor="#FFE8E8E8" android:pathData="M46,59.5h22v3h-22z" />
+    <path android:strokeColor="#FF666666" android:strokeWidth="1.5" android:fillColor="#00000000" android:pathData="M36.75,69.75h4.5v4.5h-4.5z" />
+    <path android:fillColor="#FF666666" android:pathData="M46,70.5h18v3h-18z" />
+</vector>

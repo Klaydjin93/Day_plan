@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">План дня</string>
+    <string name="widget_label">План дня</string>
+    <string name="widget_description">КБЖУ, тренировка и что подготовить — на сегодня</string>
+</resources>
