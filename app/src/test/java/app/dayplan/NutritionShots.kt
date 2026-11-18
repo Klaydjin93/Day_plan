@@ -87,4 +87,40 @@ class NutritionShots {
         }
         compose.onRoot().captureRoboImage(File(out, "weight_$date.png").path)
     }
+
+    @Test
+    fun barcodeFlows() {
+        val step = androidx.compose.runtime.mutableIntStateOf(0)
+        val results = listOf(
+            app.dayplan.nutrition.data.ProductEntity(id = 1, name = "Творог 5%", brand = "Савушкин", kcal100 = 121.0, protein100 = 17.0, fat100 = 5.0, carbs100 = 1.8, source = "manual", verified = true, updatedAt = 0),
+            app.dayplan.nutrition.data.ProductEntity(id = 2, name = "Йогурт греческий", kcal100 = 66.0, protein100 = 8.0, fat100 = 2.0, carbs100 = 3.6, source = "off", verified = false, updatedAt = 0),
+        )
+        val off = app.dayplan.nutrition.data.OffProduct("4601234567890", "Творог мягкий 5%", "Простоквашино", 121.0, 16.0, 5.0, null, null, kcalFromKj = false)
+        compose.setContent {
+            DayPlanTheme {
+                Column {
+                    when (step.intValue) {
+                        0 -> app.dayplan.nutrition.ui.BarcodeNotFoundScreen("4601234567890", null, {}, {}, {}, {}, Modifier.weight(1f))
+                        1 -> app.dayplan.nutrition.ui.AddFoodScreen(
+                            title = "Привязать код",
+                            hint = "Выбери продукт — код 4601234567890 добавится к его карточке. Если такого продукта ещё нет, заведи новую карточку.",
+                            query = "", onQuery = {}, results = results, onPick = {}, onNewProduct = {}, onBack = {}, modifier = Modifier.weight(1f),
+                        )
+                        else -> app.dayplan.nutrition.ui.ProductFormScreen(
+                            draft = app.dayplan.nutrition.ui.ProductDraft.fromOff(off),
+                            mode = app.dayplan.nutrition.ui.FormMode.CHECK_LABEL,
+                            owners = mapOf("4601234567890" to "Творог 5%"),
+                            onScan = {}, onSave = {}, onBack = {}, modifier = Modifier.weight(1f),
+                        )
+                    }
+                    BottomTabs(Tab.FOOD) {}
+                }
+            }
+        }
+        listOf("notfound", "link", "checklabel").forEachIndexed { i, name ->
+            step.intValue = i
+            compose.waitForIdle()
+            compose.onRoot().captureRoboImage(File(out, "barcode_$name.png").path)
+        }
+    }
 }

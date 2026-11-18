@@ -41,10 +41,12 @@ import app.dayplan.nutrition.data.DayTargetsView
 import app.dayplan.nutrition.data.LogEntryEntity
 import app.dayplan.nutrition.data.LogMath
 import app.dayplan.nutrition.data.Meals
+import app.dayplan.nutrition.data.OffProduct
 import app.dayplan.nutrition.data.ProductEntity
 import app.dayplan.nutrition.data.ProductKind
 import app.dayplan.nutrition.data.ProductPortionEntity
 import app.dayplan.nutrition.data.ProductSource
+import app.dayplan.nutrition.domain.Barcodes
 import app.dayplan.nutrition.domain.parseDecimal
 import app.dayplan.ui.Bullet
 import app.dayplan.ui.Card
@@ -175,11 +177,15 @@ private fun EntryRow(e: LogEntryEntity, onClick: () -> Unit) {
     }
 }
 
-// ------------------------------------------------------------------ добавление
+// ------------------------------------------------------------------ добавление и привязка
 
+/**
+ * Поиск по своей базе. Тот же экран служит для привязки штрихкода к карточке:
+ * тогда title и hint объясняют, что выбор продукта привяжет к нему код.
+ */
 @Composable
 fun AddFoodScreen(
-    meal: String,
+    title: String,
     query: String,
     onQuery: (String) -> Unit,
     results: List<ProductEntity>,
@@ -187,13 +193,16 @@ fun AddFoodScreen(
     onNewProduct: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    hint: String? = null,
+    onScan: (() -> Unit)? = null,
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize().background(Palette.Bg),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        item { BackTitle("Добавить · $meal", onBack) }
+        item { BackTitle(title, onBack) }
+        if (hint != null) item { Text(hint, fontSize = 13.sp, color = Palette.Muted) }
         item {
             OutlinedTextField(
                 value = query, onValueChange = onQuery, singleLine = true,
@@ -201,8 +210,15 @@ fun AddFoodScreen(
             )
         }
         item {
-            Button(onClick = onNewProduct, colors = ButtonDefaults.buttonColors(containerColor = Palette.Surface2, contentColor = Palette.Text)) {
-                Text(if (query.isBlank()) "+ Новый продукт" else "+ Новый продукт «${query.trim()}»")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (onScan != null) {
+                    Button(onClick = onScan, colors = ButtonDefaults.buttonColors(containerColor = Palette.Body, contentColor = Palette.Bg)) {
+                        Text("Сканировать штрихкод")
+                    }
+                }
+                Button(onClick = onNewProduct, colors = ButtonDefaults.buttonColors(containerColor = Palette.Surface2, contentColor = Palette.Text)) {
+                    Text("+ Новый продукт")
+                }
             }
         }
         item {
@@ -212,6 +228,52 @@ fun AddFoodScreen(
             )
         }
         items(results, key = { it.id }) { p -> ProductRow(p) { onPick(p) } }
+    }
+}
+
+/** Штрихкод не нашёлся ни в своей базе, ни в Open Food Facts. */
+@Composable
+fun BarcodeNotFoundScreen(
+    code: String,
+    offError: String?,
+    onLink: () -> Unit,
+    onNewProduct: () -> Unit,
+    onScanAgain: () -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize().background(Palette.Bg),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item { BackTitle("Штрихкод не найден", onBack) }
+        item {
+            Card(accent = Palette.Hema) {
+                Text(code, fontFamily = Fonts.Mono, fontSize = 18.sp, color = Palette.Text)
+                Text(
+                    if (offError == null) "Нет ни в своей базе, ни в Open Food Facts."
+                    else "В своей базе нет. Open Food Facts не проверен: $offError.",
+                    fontSize = 13.sp, color = Palette.Muted, modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+        }
+        item {
+            Button(onClick = onLink, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Palette.Body, contentColor = Palette.Bg)) {
+                Text("Привязать к продукту из базы")
+            }
+        }
+        item { Text("Тот же продукт в другой упаковке или под другим кодом — код добавится к его карточке.", fontSize = 12.sp, color = Palette.Muted) }
+        item {
+            Button(onClick = onNewProduct, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Palette.Surface2, contentColor = Palette.Text)) {
+                Text("+ Новый продукт с этим кодом")
+            }
+        }
+        item {
+            TextButton(onClick = onScanAgain, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                Text("Сканировать ещё раз", color = Palette.Run, fontSize = 13.sp)
+            }
+        }
     }
 }
 
@@ -325,20 +387,27 @@ internal fun fmtInput(x: Double): String =
 
 // ------------------------------------------------------------------ карточка продукта
 
+enum class FormMode { NEW, EDIT, CHECK_LABEL }
+
 /** Черновик карточки в форме: числа строками, как их ввели. */
 class ProductDraft(from: ProductEntity?, prefillName: String) {
     val id = from?.id ?: 0L
     var name by mutableStateOf(from?.name ?: prefillName)
     var brand by mutableStateOf(from?.brand.orEmpty())
-    var barcode by mutableStateOf(from?.barcode.orEmpty())
     var kind by mutableStateOf(from?.kind ?: ProductKind.GENERIC)
     var kcal by mutableStateOf(from?.kcal100?.let(::fmtInput).orEmpty())
     var protein by mutableStateOf(from?.protein100?.let(::fmtInput).orEmpty())
     var fat by mutableStateOf(from?.fat100?.let(::fmtInput).orEmpty())
     var carbs by mutableStateOf(from?.carbs100?.let(::fmtInput).orEmpty())
     var fiber by mutableStateOf(from?.fiber100?.let(::fmtInput).orEmpty())
+    var source = from?.source ?: ProductSource.MANUAL
+    var externalId = from?.externalId
+    /** Ккал в карточке OFF пересчитаны из кДж — показать при сверке. */
+    var kcalFromKj = false
     private val original = from
     val portions = mutableStateListOf<Pair<String, String>>()
+    val barcodes = mutableStateListOf<String>()
+    var barcodeInput by mutableStateOf("")
 
     fun errors(): List<String> = buildList {
         if (name.isBlank()) add("Название")
@@ -349,15 +418,22 @@ class ProductDraft(from: ProductEntity?, prefillName: String) {
         portions.forEachIndexed { i, (l, g) -> if (l.isBlank() || (parseDecimal(g) ?: 0.0) <= 0) add("Порция ${i + 1}") }
     }
 
+    /** Добавить код из поля ввода или со сканера. Возвращает нормализованный код или null. */
+    fun addBarcode(raw: String): String? {
+        val code = Barcodes.normalize(raw) ?: return null
+        if (code !in barcodes) barcodes.add(code)
+        if (raw == barcodeInput) barcodeInput = ""
+        return code
+    }
+
     /**
-     * Ручной ввод с упаковки считается проверенным. Если правится карточка из внешней базы,
-     * сохранение — это и есть сверка с этикеткой.
+     * Ручной ввод с упаковки считается проверенным. Карточка из Open Food Facts становится
+     * проверенной, только если её сверили с этикеткой (verified = true при сохранении).
      */
-    fun toEntity(): ProductEntity = ProductEntity(
+    fun toEntity(verified: Boolean = true): ProductEntity = ProductEntity(
         id = id,
         name = name.trim(),
         brand = brand.trim().ifEmpty { null },
-        barcode = barcode.trim().ifEmpty { null },
         kind = kind,
         kcal100 = parseDecimal(kcal)!!,
         protein100 = parseDecimal(protein)!!,
@@ -367,33 +443,105 @@ class ProductDraft(from: ProductEntity?, prefillName: String) {
         swellK = original?.swellK,
         swellKMin = original?.swellKMin,
         swellKMax = original?.swellKMax,
-        source = original?.source ?: ProductSource.MANUAL,
-        externalId = original?.externalId,
-        verified = true,
+        source = source,
+        externalId = externalId,
+        verified = verified,
         updatedAt = 0,
     )
 
     fun portionEntities(): List<ProductPortionEntity> =
         portions.mapIndexed { i, (l, g) -> ProductPortionEntity(productId = id, label = l.trim(), grams = parseDecimal(g)!!, isDefault = i == 0) }
+
+    companion object {
+        fun fromOff(off: OffProduct): ProductDraft = ProductDraft(null, off.name.orEmpty()).apply {
+            brand = off.brand.orEmpty()
+            kind = if (off.brand != null) ProductKind.BRAND else ProductKind.GENERIC
+            kcal = off.kcal100?.let { fmtInput(Math.round(it * 10) / 10.0) }.orEmpty()
+            protein = off.protein100?.let(::fmtInput).orEmpty()
+            fat = off.fat100?.let(::fmtInput).orEmpty()
+            carbs = off.carbs100?.let(::fmtInput).orEmpty()
+            fiber = off.fiber100?.let(::fmtInput).orEmpty()
+            source = ProductSource.OFF
+            externalId = off.code
+            kcalFromKj = off.kcalFromKj
+            barcodes.add(off.code)
+        }
+    }
 }
 
+/**
+ * Карточка продукта. owners — коды, уже привязанные к другим карточкам: код → название той карточки.
+ * onSave(verified): в режиме сверки две кнопки — «сверено» и «без сверки».
+ */
 @Composable
-fun ProductFormScreen(draft: ProductDraft, onSave: () -> Unit, onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun ProductFormScreen(
+    draft: ProductDraft,
+    mode: FormMode,
+    owners: Map<String, String>,
+    onScan: () -> Unit,
+    onSave: (verified: Boolean) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var showErrors by remember { mutableStateOf(false) }
+    var badCode by remember { mutableStateOf(false) }
     val errors = draft.errors()
+    fun trySave(verified: Boolean) = if (errors.isEmpty()) onSave(verified) else showErrors = true
     LazyColumn(
         modifier = modifier.fillMaxSize().background(Palette.Bg),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        item { BackTitle(if (draft.id == 0L) "Новый продукт" else "Карточка продукта", onBack) }
+        item {
+            BackTitle(
+                when (mode) {
+                    FormMode.NEW -> "Новый продукт"
+                    FormMode.EDIT -> "Карточка продукта"
+                    FormMode.CHECK_LABEL -> "Сверь с этикеткой"
+                },
+                onBack,
+            )
+        }
+        if (mode == FormMode.CHECK_LABEL) {
+            item {
+                Card(accent = Palette.Hema) {
+                    Text("Карточка из Open Food Facts. Сверь цифры с этикеткой на упаковке и поправь, если не совпадают.", fontSize = 13.sp, color = Palette.Text)
+                    if (draft.kcalFromKj) Text("Ккал в карточке не было — пересчитаны из кДж.", fontSize = 12.sp, color = Palette.Hema, modifier = Modifier.padding(top = 4.dp))
+                    if (draft.errors().isNotEmpty()) Text("Каких-то чисел в карточке нет — их нужно ввести с упаковки.", fontSize = 12.sp, color = Palette.Hema, modifier = Modifier.padding(top = 4.dp))
+                }
+            }
+        }
         item { Field("Название *", draft.name) { draft.name = it } }
         item { Field("Бренд", draft.brand) { draft.brand = it } }
-        item { Field("Штрихкод", draft.barcode, KeyboardType.Number) { draft.barcode = it } }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Chip("Без бренда", selected = draft.kind == ProductKind.GENERIC) { draft.kind = ProductKind.GENERIC }
                 Chip("Брендовый", selected = draft.kind == ProductKind.BRAND) { draft.kind = ProductKind.BRAND }
+            }
+        }
+        item { Text("Штрихкоды", fontFamily = Fonts.Mono, fontSize = 11.sp, letterSpacing = 1.sp, color = Palette.Muted) }
+        items(draft.barcodes.size) { i ->
+            val code = draft.barcodes[i]
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(code, fontFamily = Fonts.Mono, fontSize = 14.sp, color = Palette.Text)
+                    owners[code]?.let { Text("Сейчас у «$it» — перейдёт к этой карточке", fontSize = 11.sp, color = Palette.Hema) }
+                }
+                TextButton(onClick = { draft.barcodes.removeAt(i) }) { Text("✕", color = Palette.Muted) }
+            }
+        }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Field("Ввести код", draft.barcodeInput, KeyboardType.Number, Modifier.weight(1f)) { draft.barcodeInput = it; badCode = false }
+                TextButton(onClick = { badCode = draft.barcodeInput.isNotBlank() && draft.addBarcode(draft.barcodeInput) == null }) {
+                    Text("Добавить", color = Palette.Run, fontSize = 13.sp)
+                }
+            }
+        }
+        if (badCode) item { Text("Это не код товара: нужны 8, 12, 13 или 14 цифр.", fontSize = 12.sp, color = Palette.Thr) }
+        item {
+            TextButton(onClick = onScan, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                Text("Сканировать штрихкод камерой", color = Palette.Run, fontSize = 13.sp)
             }
         }
         item { Text("На 100 г — как на этикетке", fontFamily = Fonts.Mono, fontSize = 11.sp, letterSpacing = 1.sp, color = Palette.Muted) }
@@ -429,10 +577,17 @@ fun ProductFormScreen(draft: ProductDraft, onSave: () -> Unit, onBack: () -> Uni
         }
         item {
             Button(
-                onClick = { if (errors.isEmpty()) onSave() else showErrors = true },
+                onClick = { trySave(true) },
                 colors = ButtonDefaults.buttonColors(containerColor = Palette.Body, contentColor = Palette.Bg),
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Сохранить") }
+            ) { Text(if (mode == FormMode.CHECK_LABEL) "Сверено с этикеткой — сохранить" else "Сохранить") }
+        }
+        if (mode == FormMode.CHECK_LABEL) {
+            item {
+                TextButton(onClick = { trySave(false) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Сохранить без сверки — будет помечено «не проверено»", color = Palette.Hema, fontSize = 13.sp)
+                }
+            }
         }
         item { Spacer(Modifier.height(24.dp)) }
     }

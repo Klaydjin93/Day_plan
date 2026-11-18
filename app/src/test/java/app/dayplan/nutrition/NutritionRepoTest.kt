@@ -100,4 +100,34 @@ class NutritionRepoTest {
         assertNull(repo.weightView(day).today)
         assertTrue(repo.weightView(day).rolling.thin)
     }
+
+    @Test
+    fun barcodeLookupOwnThenOffThenNotFound() = runBlocking {
+        val id = repo.saveProduct(product("Творог"), emptyList(), listOf("012345678905"))
+        // свой код находится и в записи EAN-13 с ведущим нулём
+        val own = repo.lookupBarcode("0012345678905") { error("в OFF ходить не нужно") }
+        assertEquals(id, (own as app.dayplan.nutrition.data.BarcodeLookup.Own).product.id)
+
+        val asked = mutableListOf<String>()
+        val nf = repo.lookupBarcode("4600000000001") { asked += it; app.dayplan.nutrition.data.OffResult.NotFound }
+        assertTrue(nf is app.dayplan.nutrition.data.BarcodeLookup.NotFound)
+        assertEquals(listOf("4600000000001"), asked)
+
+        val offline = repo.lookupBarcode("4600000000002") { app.dayplan.nutrition.data.OffResult.Failed("Нет связи") }
+        assertEquals("Нет связи", (offline as app.dayplan.nutrition.data.BarcodeLookup.NotFound).offError)
+    }
+
+    @Test
+    fun linkingMovesCodeAndKeepsOthers() = runBlocking {
+        val a = repo.saveProduct(product("Творог в пачке"), emptyList(), listOf("4600000000010"))
+        val b = repo.saveProduct(product("Творог развесной"), emptyList())
+        repo.linkBarcode("4600000000020", a)
+        assertEquals(listOf("4600000000010", "4600000000020"), repo.barcodes(a).sorted())
+        // код, привязанный к другой карточке, переходит к новой
+        assertEquals("Творог в пачке", repo.barcodeOwner("4600000000020", exceptId = b)!!.name)
+        repo.linkBarcode("4600000000020", b)
+        assertEquals(listOf("4600000000010"), repo.barcodes(a))
+        assertEquals(listOf("4600000000020"), repo.barcodes(b))
+        assertNull(repo.barcodeOwner("4600000000020", exceptId = b))
+    }
 }

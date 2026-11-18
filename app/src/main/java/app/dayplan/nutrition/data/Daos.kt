@@ -56,8 +56,22 @@ interface ProductDao {
     @Query("SELECT * FROM product WHERE id = :id")
     suspend fun byId(id: Long): ProductEntity?
 
-    @Query("SELECT * FROM product WHERE barcode = :barcode ORDER BY verified DESC, updated_at DESC LIMIT 1")
-    suspend fun byBarcode(barcode: String): ProductEntity?
+    /** Продукт по любому из равнозначных вариантов кода (EAN-13 с ведущим нулём и без, UPC-A). */
+    @Query("SELECT p.* FROM product p JOIN product_barcode b ON b.product_id = p.id WHERE b.barcode IN (:codes) LIMIT 1")
+    suspend fun byBarcode(codes: List<String>): ProductEntity?
+
+    @Query("SELECT * FROM product_barcode WHERE product_id = :productId ORDER BY created_at")
+    suspend fun barcodes(productId: Long): List<ProductBarcodeEntity>
+
+    @Query("SELECT * FROM product_barcode WHERE barcode = :barcode")
+    suspend fun barcode(barcode: String): ProductBarcodeEntity?
+
+    @Query("DELETE FROM product_barcode WHERE product_id = :productId")
+    suspend fun deleteBarcodes(productId: Long)
+
+    /** Код, привязанный к другому продукту, переходит к этому. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBarcodes(rows: List<ProductBarcodeEntity>)
 
     /** Поиск по своей базе: сначала проверенные, потом по названию. key — уже нормализован. */
     @Query("SELECT * FROM product WHERE search_key LIKE '%' || :key || '%' ORDER BY verified DESC, name LIMIT :limit")

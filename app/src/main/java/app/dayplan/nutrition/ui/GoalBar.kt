@@ -41,7 +41,8 @@ fun zoneColor(zone: Zone): Color = when (zone) {
 @Composable
 fun GoalBar(title: String, goal: Goal, actual: Double, unit: String, modifier: Modifier = Modifier) {
     val g = goal.bar(actual)
-    val color = zoneColor(g.zone)
+    // без смысла из плана оценку не ставим: полоса нейтральная, без зелёного и красного
+    val color = if (goal.specified) zoneColor(g.zone) else Palette.Muted
     Column(modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(title, fontSize = 13.sp, color = Palette.Text, modifier = Modifier.weight(1f))
@@ -76,7 +77,7 @@ fun GoalBar(title: String, goal: Goal, actual: Double, unit: String, modifier: M
         Text(
             goal.remainder(actual, unit),
             fontSize = 12.sp,
-            color = if (g.zone == Zone.WARN || g.zone == Zone.OVER) color else Palette.Muted,
+            color = if (goal.specified && (g.zone == Zone.WARN || g.zone == Zone.OVER)) color else Palette.Muted,
         )
     }
 }

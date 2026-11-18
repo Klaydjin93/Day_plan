@@ -6,6 +6,7 @@ import app.dayplan.data.ChecklistStore
 import app.dayplan.data.DayLookup
 import app.dayplan.data.PlanStore
 import app.dayplan.model.Nutrition
+import app.dayplan.nutrition.domain.Barcodes
 import app.dayplan.nutrition.domain.DayGoals
 import app.dayplan.nutrition.domain.GoalsMapper
 import app.dayplan.nutrition.domain.Nutrients
@@ -33,6 +34,13 @@ data class WeightView(
     val previousWeek: WeightAverage?,
     val latest: List<WeightEntryEntity>,
 )
+
+sealed interface BarcodeLookup {
+    data class Own(val product: ProductEntity) : BarcodeLookup
+    data class Off(val product: OffProduct) : BarcodeLookup
+    /** offError — Open Food Facts не ответил (нет сети); код тогда не найден только в своей базе. */
+    data class NotFound(val code: String, val offError: String?) : BarcodeLookup
+}
 
 class NutritionRepo(private val db: NutritionDatabase) {
 
@@ -92,17 +100,48 @@ class NutritionRepo(private val db: NutritionDatabase) {
         return db.products().search(key)
     }
 
-    suspend fun saveProduct(product: ProductEntity, portions: List<ProductPortionEntity>, now: Long = System.currentTimeMillis()): Long =
-        db.withTransaction {
-            val row = product.copy(searchKey = searchKeyOf(product.name, product.brand), updatedAt = now)
-            val id = if (row.id == 0L) db.products().insert(row) else row.id.also { db.products().update(row) }
-            db.products().deletePortions(id)
-            if (portions.isNotEmpty()) {
-                val oneDefault = portions.indexOfFirst { it.isDefault }.coerceAtLeast(0)
-                db.products().insertPortions(portions.mapIndexed { i, p -> p.copy(id = 0, productId = id, isDefault = i == oneDefault) })
-            }
-            id
+    suspend fun saveProduct(
+        product: ProductEntity,
+        portions: List<ProductPortionEntity>,
+        barcodes: List<String> = emptyList(),
+        now: Long = System.currentTimeMillis(),
+    ): Long = db.withTransaction {
+        val row = product.copy(searchKey = searchKeyOf(product.name, product.brand), updatedAt = now)
+        val id = if (row.id == 0L) db.products().insert(row) else row.id.also { db.products().update(row) }
+        db.products().deletePortions(id)
+        if (portions.isNotEmpty()) {
+            val oneDefault = portions.indexOfFirst { it.isDefault }.coerceAtLeast(0)
+            db.products().insertPortions(portions.mapIndexed { i, p -> p.copy(id = 0, productId = id, isDefault = i == oneDefault) })
         }
+        db.products().deleteBarcodes(id)
+        val codes = barcodes.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (codes.isNotEmpty()) db.products().insertBarcodes(codes.map { ProductBarcodeEntity(it, id, now) })
+        id
+    }
+
+    suspend fun barcodes(productId: Long): List<String> = db.products().barcodes(productId).map { it.barcode }
+
+    /** Продукт, к которому код уже привязан (кроме exceptId). */
+    suspend fun barcodeOwner(code: String, exceptId: Long = 0): ProductEntity? =
+        db.products().byBarcode(Barcodes.variants(code))?.takeIf { it.id != exceptId }
+
+    /** Привязать код к карточке из базы. Если он был у другой карточки — переходит к этой. */
+    suspend fun linkBarcode(code: String, productId: Long, now: Long = System.currentTimeMillis()) =
+        db.products().insertBarcodes(listOf(ProductBarcodeEntity(code, productId, now)))
+
+    /** Поиск по коду: своя база, затем онлайн Open Food Facts. */
+    suspend fun lookupBarcode(code: String, off: (String) -> OffResult): BarcodeLookup {
+        db.products().byBarcode(Barcodes.variants(code))?.let { return BarcodeLookup.Own(it) }
+        var failure: String? = null
+        for (v in Barcodes.variants(code)) {
+            when (val r = off(v)) {
+                is OffResult.Found -> return BarcodeLookup.Off(r.product.copy(code = code))
+                is OffResult.Failed -> { failure = r.message; break }
+                OffResult.NotFound -> Unit
+            }
+        }
+        return BarcodeLookup.NotFound(code, failure)
+    }
 
     // ---------- вес ----------
 

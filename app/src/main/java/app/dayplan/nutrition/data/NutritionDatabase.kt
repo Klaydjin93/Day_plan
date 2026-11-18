@@ -9,6 +9,7 @@ import androidx.room.RoomDatabase
     entities = [
         ProductEntity::class,
         ProductPortionEntity::class,
+        ProductBarcodeEntity::class,
         DishEntity::class,
         DishIngredientEntity::class,
         CookwareEntity::class,
@@ -21,7 +22,7 @@ import androidx.room.RoomDatabase
         WeightEntryEntity::class,
         DayExportEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class NutritionDatabase : RoomDatabase() {
@@ -39,6 +40,7 @@ abstract class NutritionDatabase : RoomDatabase() {
         fun get(context: Context): NutritionDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(context.applicationContext, NutritionDatabase::class.java, "nutrition.db")
+                    .addMigrations(Migrations.M1_2)
                     .build()
                     .also { instance = it }
             }

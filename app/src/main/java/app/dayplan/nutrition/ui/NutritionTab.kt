@@ -1,7 +1,9 @@
 package app.dayplan.nutrition.ui
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -14,12 +16,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.sp
+import app.dayplan.nutrition.data.BarcodeLookup
 import app.dayplan.nutrition.data.DayTargetsView
 import app.dayplan.nutrition.data.LogEntryEntity
 import app.dayplan.nutrition.data.NutritionDatabase
 import app.dayplan.nutrition.data.NutritionRepo
+import app.dayplan.nutrition.data.OffClient
+import app.dayplan.nutrition.data.OffProduct
 import app.dayplan.nutrition.data.ProductEntity
 import app.dayplan.nutrition.data.ProductPortionEntity
+import app.dayplan.nutrition.domain.Barcodes
 import app.dayplan.ui.Palette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -29,8 +35,22 @@ import java.time.LocalDate
 private sealed interface Route {
     data object Day : Route
     data class Add(val meal: String) : Route
-    /** Карточка продукта: новая (productId = null) или правка. После новой — сразу порция, если пришли из добавления. */
-    data class Form(val meal: String?, val productId: Long?, val prefill: String, val back: Route) : Route
+    data class NotFound(val meal: String, val code: String, val offError: String?) : Route
+    /** Привязка кода к карточке из своей базы. */
+    data class Link(val meal: String, val code: String) : Route
+    /**
+     * Карточка продукта: новая, правка или сверка карточки из Open Food Facts.
+     * После новой карточки и сверки сразу открывается порция, если пришли из добавления (meal != null).
+     */
+    data class Form(
+        val meal: String?,
+        val mode: FormMode,
+        val back: Route,
+        val productId: Long? = null,
+        val prefill: String = "",
+        val barcode: String? = null,
+        val off: OffProduct? = null,
+    ) : Route
 }
 
 private data class Pick(val product: ProductEntity, val portions: List<ProductPortionEntity>, val meal: String)
@@ -47,6 +67,7 @@ fun NutritionTab(
 ) {
     val context = LocalContext.current
     val repo = remember { NutritionRepo(NutritionDatabase.get(context)) }
+    val off = remember { OffClient() }
     val scope = rememberCoroutineScope()
     var route by remember { mutableStateOf<Route>(Route.Day) }
     var version by remember { mutableIntStateOf(0) }
@@ -58,6 +79,10 @@ fun NutritionTab(
     var edit by remember { mutableStateOf<EditEntry?>(null) }
     var draft by remember { mutableStateOf<ProductDraft?>(null) }
     var draftRoute by remember { mutableStateOf<Route?>(null) }
+    var owners by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var busy by remember { mutableStateOf<String?>(null) }
+
+    fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
 
     fun io(block: suspend () -> Unit) = scope.launch {
         withContext(Dispatchers.IO) { block() }
@@ -70,23 +95,38 @@ fun NutritionTab(
         entries = e
     }
     LaunchedEffect(query, version, route) {
-        if (route is Route.Add) results = withContext(Dispatchers.IO) { repo.findProducts(query) }
+        if (route is Route.Add || route is Route.Link) results = withContext(Dispatchers.IO) { repo.findProducts(query) }
     }
     LaunchedEffect(route) {
         val r = route
         if (r is Route.Form) {
-            val (p, portions) = withContext(Dispatchers.IO) {
-                val p = r.productId?.let { repo.product(it) }
-                p to (p?.let { repo.portions(it.id) } ?: emptyList())
+            draft = when {
+                r.off != null -> ProductDraft.fromOff(r.off)
+                r.productId != null -> withContext(Dispatchers.IO) {
+                    val p = repo.product(r.productId)
+                    ProductDraft(p, "").also { d ->
+                        repo.portions(r.productId).forEach { d.portions.add(it.label to fmtInput(it.grams)) }
+                        d.barcodes.addAll(repo.barcodes(r.productId))
+                    }
+                }
+                else -> ProductDraft(null, r.prefill).also { d -> r.barcode?.let { d.barcodes.add(it) } }
             }
-            draft = ProductDraft(p, r.prefill).also { d -> portions.forEach { d.portions.add(it.label to fmtInput(it.grams)) } }
             draftRoute = r
+        }
+    }
+    val codes = draft?.barcodes?.toList().orEmpty()
+    LaunchedEffect(draft, codes) {
+        val d = draft ?: return@LaunchedEffect
+        owners = withContext(Dispatchers.IO) {
+            codes.mapNotNull { c -> repo.barcodeOwner(c, exceptId = d.id)?.let { c to it.name } }.toMap()
         }
     }
 
     BackHandler(enabled = route != Route.Day) {
         route = when (val r = route) {
             is Route.Form -> r.back
+            is Route.Link -> Route.NotFound(r.meal, r.code, null)
+            is Route.NotFound -> Route.Add(r.meal)
             else -> Route.Day
         }
     }
@@ -95,6 +135,32 @@ fun NutritionTab(
         val portions = withContext(Dispatchers.IO) { repo.portions(p.id) }
         pick = Pick(p, portions, meal)
     }
+
+    fun scanFor(meal: String) = Scanner.scan(
+        context,
+        onResult = { raw ->
+            if (raw == null) return@scan
+            val code = Barcodes.normalize(raw)
+            if (code == null) {
+                toast("Это не штрихкод товара")
+                return@scan
+            }
+            scope.launch {
+                busy = "Ищу $code…"
+                val found = withContext(Dispatchers.IO) { repo.lookupBarcode(code) { off.fetch(it) } }
+                busy = null
+                when (found) {
+                    is BarcodeLookup.Own -> {
+                        route = Route.Add(meal)
+                        openPick(found.product, meal)
+                    }
+                    is BarcodeLookup.Off -> route = Route.Form(meal, FormMode.CHECK_LABEL, Route.Add(meal), off = found.product)
+                    is BarcodeLookup.NotFound -> route = Route.NotFound(meal, found.code, found.offError)
+                }
+            }
+        },
+        onError = { toast(it) },
+    )
 
     when (val r = route) {
         Route.Day -> NutritionDayScreen(
@@ -113,30 +179,71 @@ fun NutritionTab(
             modifier = modifier,
         )
         is Route.Add -> AddFoodScreen(
-            meal = r.meal, query = query, onQuery = { query = it }, results = results,
+            title = "Добавить · ${r.meal}", query = query, onQuery = { query = it }, results = results,
             onPick = { openPick(it, r.meal) },
-            onNewProduct = { route = Route.Form(r.meal, null, query.trim(), r) },
+            onNewProduct = { route = Route.Form(r.meal, FormMode.NEW, r, prefill = query.trim()) },
             onBack = { route = Route.Day },
+            onScan = { scanFor(r.meal) },
+            modifier = modifier,
+        )
+        is Route.NotFound -> BarcodeNotFoundScreen(
+            code = r.code, offError = r.offError,
+            onLink = { query = ""; route = Route.Link(r.meal, r.code) },
+            onNewProduct = { route = Route.Form(r.meal, FormMode.NEW, r, barcode = r.code) },
+            onScanAgain = { scanFor(r.meal) },
+            onBack = { route = Route.Add(r.meal) },
+            modifier = modifier,
+        )
+        is Route.Link -> AddFoodScreen(
+            title = "Привязать код",
+            hint = "Выбери продукт — код ${r.code} добавится к его карточке. Если такого продукта ещё нет, заведи новую карточку.",
+            query = query, onQuery = { query = it }, results = results,
+            onPick = { p ->
+                scope.launch {
+                    withContext(Dispatchers.IO) { repo.linkBarcode(r.code, p.id) }
+                    toast("Код привязан к «${p.name}»")
+                    route = Route.Add(r.meal)
+                    openPick(p, r.meal)
+                }
+            },
+            onNewProduct = { route = Route.Form(r.meal, FormMode.NEW, r, prefill = query.trim(), barcode = r.code) },
+            onBack = { route = Route.NotFound(r.meal, r.code, null) },
             modifier = modifier,
         )
         is Route.Form -> draft?.takeIf { draftRoute == r }?.let { d ->
             ProductFormScreen(
-                draft = d,
-                onSave = {
+                draft = d, mode = r.mode, owners = owners,
+                onScan = {
+                    Scanner.scan(
+                        context,
+                        onResult = { raw -> if (raw != null && d.addBarcode(raw) == null) toast("Это не штрихкод товара") },
+                        onError = { toast(it) },
+                    )
+                },
+                onSave = { verified ->
                     scope.launch {
                         val saved = withContext(Dispatchers.IO) {
-                            val id = repo.saveProduct(d.toEntity(), d.portionEntities())
+                            val id = repo.saveProduct(d.toEntity(verified), d.portionEntities(), d.barcodes.toList())
                             repo.product(id)!! to repo.portions(id)
                         }
                         version++
-                        route = r.back
-                        if (r.productId == null && r.meal != null) pick = Pick(saved.first, saved.second, r.meal)
+                        val meal = r.meal
+                        if (meal != null && (r.mode == FormMode.NEW || r.mode == FormMode.CHECK_LABEL)) {
+                            route = Route.Add(meal)
+                            pick = Pick(saved.first, saved.second, meal)
+                        } else {
+                            route = r.back
+                        }
                     }
                 },
                 onBack = { route = r.back },
                 modifier = modifier,
             )
         }
+    }
+
+    busy?.let { text ->
+        AlertDialog(onDismissRequest = {}, confirmButton = {}, containerColor = Palette.Surface, text = { Text(text, color = Palette.Text) })
     }
 
     pick?.let { p ->
@@ -150,7 +257,7 @@ fun NutritionTab(
             onDismiss = { pick = null },
             onEditProduct = {
                 pick = null
-                route = Route.Form(p.meal, p.product.id, "", route)
+                route = Route.Form(p.meal, FormMode.EDIT, route, productId = p.product.id)
             },
         )
     }

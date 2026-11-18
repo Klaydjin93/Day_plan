@@ -32,14 +32,13 @@ object ProductSource {
 }
 
 /** Карточка продукта или блюда, значения на 100 г. */
-@Entity(tableName = "product", indices = [Index("barcode"), Index("search_key")])
+@Entity(tableName = "product", indices = [Index("search_key")])
 data class ProductEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val brand: String? = null,
     /** Название и бренд в нижнем регистре, ё → е: LIKE в SQLite не понижает регистр кириллицы. */
     @ColumnInfo(name = "search_key") val searchKey: String = searchKeyOf(name, brand),
-    val barcode: String? = null,
     val kind: String = ProductKind.GENERIC,
     @ColumnInfo(name = "kcal_100") val kcal100: Double,
     @ColumnInfo(name = "protein_100") val protein100: Double,
@@ -53,6 +52,21 @@ data class ProductEntity(
     @ColumnInfo(name = "external_id") val externalId: String? = null,
     val verified: Boolean,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
+)
+
+/**
+ * Штрихкоды продукта. Код принадлежит одному продукту, у продукта кодов может быть несколько
+ * (та же продукция в другой упаковке) — так работает привязка нового кода к карточке из базы.
+ */
+@Entity(
+    tableName = "product_barcode",
+    foreignKeys = [ForeignKey(ProductEntity::class, ["id"], ["product_id"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("product_id")],
+)
+data class ProductBarcodeEntity(
+    @PrimaryKey val barcode: String,
+    @ColumnInfo(name = "product_id") val productId: Long,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
 )
 
 @Entity(
