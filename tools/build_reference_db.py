@@ -98,7 +98,10 @@ def off_rows(raw):
         if not (0 <= kcal <= 950 and 0 <= p <= 100 and 0 <= f <= 100 and 0 <= carbs <= 100):
             continue
         brand = (brands or "").split(",")[0].strip() or None
-        row = (c, name, brand, round(kcal, 1), p, f, carbs, v.get("fiber"), 1 if from_kj else 0, modified or 0)
+        fiber = v.get("fiber")
+        # parquet хранит float32: 8.8 приходит как 8.800000190734863
+        row = (c, name, brand, round(kcal, 1), round(p, 2), round(f, 2), round(carbs, 2),
+               None if fiber is None else round(fiber, 2), 1 if from_kj else 0, modified or 0)
         if c not in best or row[-1] > best[c][-1]:
             best[c] = row
     return list(best.values())
@@ -166,7 +169,7 @@ def main():
     raw = extract_off(a.off, a.cache)
     off = off_rows(raw)
     usda = json.load(open(a.usda, encoding="utf-8"))["items"]
-    meta = build(off, usda, a.out, a.off if not a.off.startswith("http") else "Hugging Face food.parquet")
+    meta = build(off, usda, a.out, "Open Food Facts food.parquet (Hugging Face), " + time.strftime("%Y-%m-%d"))
     size = os.path.getsize(a.out)
     print(f"Российских товаров в выгрузке: {len(raw)}, с полным КБЖУ: {len(off)}; USDA: {len(usda)}")
     print(f"{a.out}: {size / 1024 / 1024:.1f} МБ, {time.time() - t:.0f} с; {meta['built_at']}")
