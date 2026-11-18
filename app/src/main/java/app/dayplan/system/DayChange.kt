@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import app.dayplan.data.ChecklistStore
 import app.dayplan.data.PlanStore
+import app.dayplan.nutrition.data.NutritionSync
 import app.dayplan.widget.WidgetRefresher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -53,6 +54,8 @@ class DayChangeReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.Default).launch {
             try {
+                // до prune: цели недели должны попасть в базу раньше, чем удалится файл плана
+                NutritionSync.syncAll(app)
                 PlanStore(app).prune()
                 ChecklistStore(app).prune()
                 WidgetRefresher.refreshAll(app)

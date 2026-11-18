@@ -25,6 +25,8 @@ import app.dayplan.data.ChecklistStore
 import app.dayplan.data.DaySnapshot
 import app.dayplan.data.PlanStore
 import app.dayplan.data.StoredPlan
+import app.dayplan.nutrition.data.NutritionDatabase
+import app.dayplan.nutrition.data.NutritionSync
 import app.dayplan.system.MidnightScheduler
 import app.dayplan.widget.WidgetRefresher
 import kotlinx.coroutines.Dispatchers
@@ -82,7 +84,13 @@ class MainActivity : ComponentActivity() {
 
     private fun runImport(block: (PlanStore) -> PlanStore.ImportResult) {
         lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) { block(PlanStore(this@MainActivity)) }
+            val result = withContext(Dispatchers.IO) {
+                block(PlanStore(this@MainActivity)).also { r ->
+                    if (r is PlanStore.ImportResult.Ok) {
+                        NutritionSync(NutritionDatabase.get(applicationContext)).syncPlan(r.stored.plan, r.stored.importedAt)
+                    }
+                }
+            }
             when (result) {
                 is PlanStore.ImportResult.Error -> message.value = result.message
                 is PlanStore.ImportResult.Ok -> {

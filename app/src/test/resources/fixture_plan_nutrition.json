@@ -1,0 +1,54 @@
+{
+  "schema": "plan-day/1",
+  "week": {
+    "id": "W98",
+    "start": "2030-02-04",
+    "end": "2030-02-10",
+    "title": "Тестовая неделя питания",
+    "subtitle": "проверочные данные, не план",
+    "plan_version": "v1",
+    "generated": "2030-02-03",
+    "nutrition_rules": ["Тестовое правило"],
+    "nutrition": {"kcal_avg": 2250}
+  },
+  "days": [
+    {
+      "date": "2030-02-09",
+      "dow": "СБ",
+      "kind": "rest",
+      "nutrition": {
+        "type": "отдых · заправка",
+        "kcal": 2300, "protein_g": 190, "fat_g": 60, "carbs_g": 250,
+        "notes": ["Тестовая заметка заправки"],
+        "targets": {
+          "kcal": {"mode": "target", "tol_pct": 5},
+          "protein_g": {"mode": "min"},
+          "fat_g": {"mode": "target", "tol_pct": 5, "max": 75},
+          "carbs_g": {"mode": "min"}
+        },
+        "fuel_for": "2030-02-10"
+      },
+      "sessions": [],
+      "report": [
+        {"item": "Вес утром", "when": "утро", "auto": "weight"},
+        {"item": "Питание за день", "when": "вечер", "auto": "nutrition"},
+        {"item": "Обычный пункт"}
+      ]
+    },
+    {
+      "date": "2030-02-10",
+      "dow": "ВС",
+      "kind": "run",
+      "nutrition": {"type": "длительная", "kcal": 2200, "protein_g": 190, "fat_g": 65, "carbs_g": 214, "notes": []},
+      "sessions": [],
+      "report": []
+    },
+    {
+      "date": "2030-02-08",
+      "dow": "ПТ",
+      "kind": "rest",
+      "sessions": [],
+      "report": []
+    }
+  ]
+}
