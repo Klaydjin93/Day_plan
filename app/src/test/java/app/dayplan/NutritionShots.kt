@@ -128,6 +128,7 @@ class NutritionShots {
     fun addWithReference() {
         val own = listOf(app.dayplan.nutrition.data.ProductEntity(id = 1, name = "Творог 5%", brand = "Савушкин", kcal100 = 121.0, protein100 = 17.0, fat100 = 5.0, carbs100 = 1.8, source = "manual", verified = true, updatedAt = 0))
         val refs = listOf(
+            app.dayplan.nutrition.data.RefProduct("chat", "chat-04", null, "Котлетум (грудка, яйцо, сыр)", null, 144.4, 21.03, 6.67, 0.08, null, false),
             app.dayplan.nutrition.data.RefProduct("off", "4690228034428", "4690228034428", "Творог обезжиренный", "Простоквашино", 55.3, 10.5, 0.1, 3.0, null, false),
             app.dayplan.nutrition.data.RefProduct("off", "4602014004683", "4602014004683", "Творог 9%", "Домик в деревне", 160.0, 16.0, 9.0, 3.0, null, false),
         )
