@@ -523,6 +523,8 @@ class ProductDraft(from: ProductEntity?, prefillName: String) {
     var carbs by mutableStateOf(from?.carbs100?.let(::fmtInput).orEmpty())
     var fiber by mutableStateOf(from?.fiber100?.let(::fmtInput).orEmpty())
     var swell by mutableStateOf(from?.swellK?.let(::fmtInput).orEmpty())
+    var swellMin by mutableStateOf(from?.swellKMin?.let(::fmtInput).orEmpty())
+    var swellMax by mutableStateOf(from?.swellKMax?.let(::fmtInput).orEmpty())
     var source = from?.source ?: ProductSource.MANUAL
     var externalId = from?.externalId
     /** Ккал в карточке OFF пересчитаны из кДж — показать при сверке. */
@@ -539,6 +541,11 @@ class ProductDraft(from: ProductEntity?, prefillName: String) {
         }
         if (fiber.isNotBlank() && (parseDecimal(fiber) ?: -1.0) < 0) add("Клетчатка")
         if (swell.isNotBlank() && (parseDecimal(swell) ?: 0.0) <= 1.0) add("Разбухание (больше 1)")
+        val k = parseDecimal(swell)
+        val lo = parseDecimal(swellMin)
+        val hi = parseDecimal(swellMax)
+        if ((swellMin.isNotBlank() || swellMax.isNotBlank()) && k == null) add("Разбухание: диапазон без коэффициента")
+        if (k != null && ((lo != null && (lo <= 1.0 || lo > k)) || (hi != null && hi < k) || (swellMin.isNotBlank() && lo == null) || (swellMax.isNotBlank() && hi == null))) add("Диапазон разбухания (от ≤ k ≤ до)")
         portions.forEachIndexed { i, (l, g) -> if (l.isBlank() || (parseDecimal(g) ?: 0.0) <= 0) add("Порция ${i + 1}") }
     }
 
@@ -565,9 +572,8 @@ class ProductDraft(from: ProductEntity?, prefillName: String) {
         carbs100 = parseDecimal(carbs)!!,
         fiber100 = parseDecimal(fiber),
         swellK = parseDecimal(swell),
-        // диапазон из справочника остаётся, пока коэффициент не меняли руками
-        swellKMin = original?.swellKMin?.takeIf { parseDecimal(swell) == original.swellK },
-        swellKMax = original?.swellKMax?.takeIf { parseDecimal(swell) == original.swellK },
+        swellKMin = parseDecimal(swell)?.let { parseDecimal(swellMin) },
+        swellKMax = parseDecimal(swell)?.let { parseDecimal(swellMax) },
         source = source,
         externalId = externalId,
         verified = verified,
@@ -684,6 +690,12 @@ fun ProductFormScreen(
         }
         item { Field("Клетчатка", draft.fiber, KeyboardType.Decimal) { draft.fiber = it } }
         item { Field("Разбухание при варке, раз (крупы, макароны)", draft.swell, KeyboardType.Decimal) { draft.swell = it } }
+        if (draft.swell.isNotBlank()) item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Field("Диапазон от", draft.swellMin, KeyboardType.Decimal, Modifier.weight(1f)) { draft.swellMin = it }
+                Field("до", draft.swellMax, KeyboardType.Decimal, Modifier.weight(1f)) { draft.swellMax = it }
+            }
+        }
         item { Text("Порции — первая по умолчанию", fontFamily = Fonts.Mono, fontSize = 11.sp, letterSpacing = 1.sp, color = Palette.Muted) }
         items(draft.portions.size) { i ->
             val (label, grams) = draft.portions[i]

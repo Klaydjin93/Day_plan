@@ -54,7 +54,8 @@ class DishRepo(private val db: NutritionDatabase) {
             name = input.name.trim(),
             searchKey = searchKeyOf(input.name, null),
             kind = ProductKind.DISH,
-            kcal100 = per100.kcal, protein100 = per100.protein, fat100 = per100.fat, carbs100 = per100.carbs, fiber100 = per100.fiber,
+            kcal100 = per100.kcal, protein100 = per100.protein, fat100 = per100.fat, carbs100 = per100.carbs, // клетчатка в карточку — только если она известна у всех ингредиентов, иначе итог занижен
+            fiber100 = per100.fiber.takeIf { input.lines.all { it.product.fiber100 != null } },
             source = ProductSource.DISH,
             verified = input.lines.all { it.product.verified },
             updatedAt = now,

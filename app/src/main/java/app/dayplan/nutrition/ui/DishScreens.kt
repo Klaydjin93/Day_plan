@@ -248,7 +248,7 @@ fun DishEditorScreen(
                     )
                     Text(
                         "${fmt0(per100.kcal)} ккал · Б ${fmt1(per100.protein)} · Ж ${fmt1(per100.fat)} · У ${fmt1(per100.carbs)}" +
-                            (per100.fiber?.let { " · Кл ${fmt1(it)}" } ?: ""),
+                            (per100.fiber?.let { " · Кл " + (if (c.lines.any { l -> l.product.fiber100 == null }) "≥" else "") + fmt1(it) } ?: ""),
                         fontFamily = Fonts.Mono, fontSize = 15.sp, color = Palette.Text, modifier = Modifier.padding(top = 6.dp),
                     )
                     c.rangeKcal?.let { (lo, hi) ->
@@ -285,23 +285,28 @@ fun DishEditorScreen(
 
 @Composable
 private fun TotalsTable(c: DishCalc) {
+    val fiber = c.lines.any { it.product.fiber100 != null }
+    val partial = c.lines.any { it.product.fiber100 == null }
     Card {
         SectionLabel("Итог по ингредиентам", Palette.Muted)
         Row(Modifier.padding(top = 6.dp)) {
             Cell("", 2.4f, header = true); Cell("г", 1f, header = true); Cell("ккал", 1.1f, header = true)
             Cell("Б", 0.9f, header = true); Cell("Ж", 0.9f, header = true); Cell("У", 0.9f, header = true)
+            if (fiber) Cell("Кл", 0.8f, header = true)
         }
         c.lines.forEach { l ->
             val n = l.ingredient().per100.scaled(l.grams / 100)
             Row(Modifier.padding(top = 4.dp)) {
                 Cell(l.product.name, 2.4f, left = true); Cell(fmt0(l.grams), 1f); Cell(fmt0(n.kcal), 1.1f)
                 Cell(fmt0(n.protein), 0.9f); Cell(fmt0(n.fat), 0.9f); Cell(fmt0(n.carbs), 0.9f)
+                if (fiber) Cell(n.fiber?.let(::fmt0) ?: "—", 0.8f)
             }
         }
         Row(Modifier.padding(top = 6.dp)) {
             Cell("Итого", 2.4f, left = true, bold = true); Cell(fmt0(c.lines.sumOf { it.grams }), 1f, bold = true)
             Cell(fmt0(c.totals.kcal), 1.1f, bold = true); Cell(fmt0(c.totals.protein), 0.9f, bold = true)
             Cell(fmt0(c.totals.fat), 0.9f, bold = true); Cell(fmt0(c.totals.carbs), 0.9f, bold = true)
+            if (fiber) Cell(c.totals.fiber?.let { (if (partial) "≥" else "") + fmt0(it) } ?: "—", 0.8f, bold = true)
         }
     }
 }

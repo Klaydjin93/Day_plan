@@ -142,6 +142,16 @@ class DishTest {
     }
 
     @Test
+    fun fiberIsSavedOnlyWhenKnownForEveryIngredient() = runBlocking {
+        val lines = chatProducts()
+        val partial = lines.mapIndexed { i, l -> if (i == 2) DishLine(l.product.copy(fiber100 = 2.8), l.grams) else l }
+        assertNull(repo.product(dishes.save(DishInput(0, "Частично", partial, YieldMethod.RAW_SUM, 1142.0, null, null, null)))!!.fiber100)
+        val full = lines.map { DishLine(it.product.copy(fiber100 = if (it.product.name == "Морковь") 2.8 else 0.0), it.grams) }
+        val f = repo.product(dishes.save(DishInput(0, "Полностью", full, YieldMethod.RAW_SUM, 1142.0, null, null, null)))!!.fiber100!!
+        assertEquals(2.8 * 195 / 1142, f, 1e-9)
+    }
+
+    @Test
     fun cookwareIsRemembered() = runBlocking {
         dishes.addCookware("Кастрюля 3 л", 900.0)
         assertEquals(900.0, dishes.cookware().single().tareG, 0.0)
