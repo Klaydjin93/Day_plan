@@ -47,6 +47,7 @@ import app.dayplan.nutrition.data.ProductKind
 import app.dayplan.nutrition.data.ProductPortionEntity
 import app.dayplan.nutrition.data.ProductSource
 import app.dayplan.nutrition.data.RefProduct
+import app.dayplan.nutrition.data.TemplateView
 import app.dayplan.nutrition.domain.Barcodes
 import app.dayplan.nutrition.domain.parseDecimal
 import app.dayplan.ui.Bullet
@@ -105,6 +106,7 @@ fun NutritionDayScreen(
     onAdd: (meal: String) -> Unit,
     onEntry: (LogEntryEntity) -> Unit,
     modifier: Modifier = Modifier,
+    onSaveTemplate: ((meal: String, entries: List<LogEntryEntity>) -> Unit)? = null,
 ) {
     val total = LogMath.total(entries)
     LazyColumn(
@@ -143,21 +145,36 @@ fun NutritionDayScreen(
                 }
             }
         }
-        items(Meals.ALL) { meal -> MealCard(meal, entries.filter { it.meal == meal }, onAdd, onEntry) }
+        items(Meals.ALL) { meal -> MealCard(meal, entries.filter { it.meal == meal }, onAdd, onEntry, onSaveTemplate = onSaveTemplate) }
         val other = entries.filter { it.meal !in Meals.ALL }
         if (other.isNotEmpty()) item { MealCard("Другое", other, onAdd, onEntry, canAdd = false) }
     }
 }
 
 @Composable
-private fun MealCard(meal: String, items: List<LogEntryEntity>, onAdd: (String) -> Unit, onEntry: (LogEntryEntity) -> Unit, canAdd: Boolean = true) {
+private fun MealCard(
+    meal: String,
+    items: List<LogEntryEntity>,
+    onAdd: (String) -> Unit,
+    onEntry: (LogEntryEntity) -> Unit,
+    canAdd: Boolean = true,
+    onSaveTemplate: ((String, List<LogEntryEntity>) -> Unit)? = null,
+) {
     val sum = LogMath.total(items)
     Card {
         SectionLabel(meal, Palette.Muted, right = if (items.isEmpty()) null else "${fmt0(sum.kcal)} ккал", rightColor = Palette.Text)
         items.forEach { e -> EntryRow(e, onClick = { onEntry(e) }) }
-        if (canAdd) {
-            TextButton(onClick = { onAdd(meal) }, contentPadding = PaddingValues(horizontal = 0.dp)) {
-                Text("+ Добавить", color = Palette.Run, fontSize = 13.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (canAdd) {
+                TextButton(onClick = { onAdd(meal) }, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                    Text("+ Добавить", color = Palette.Run, fontSize = 13.sp)
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            if (onSaveTemplate != null && items.any { it.productId != null }) {
+                TextButton(onClick = { onSaveTemplate(meal, items) }, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                    Text("В шаблон", color = Palette.Muted, fontSize = 12.sp)
+                }
             }
         }
     }
@@ -201,6 +218,9 @@ fun AddFoodScreen(
     online: OnlineState? = null,
     onSearchOnline: () -> Unit = {},
     onPickOnline: (OffProduct) -> Unit = {},
+    templates: List<TemplateView> = emptyList(),
+    onTemplate: (TemplateView) -> Unit = {},
+    onNewDish: (() -> Unit)? = null,
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize().background(Palette.Bg),
@@ -224,6 +244,27 @@ fun AddFoodScreen(
                 }
                 Button(onClick = onNewProduct, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Palette.Surface2, contentColor = Palette.Text)) {
                     Text("+ Новый продукт", maxLines = 1)
+                }
+            }
+        }
+        if (onNewDish != null) {
+            item {
+                TextButton(onClick = onNewDish, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                    Text("+ Новое блюдо из продуктов базы", color = Palette.Run, fontSize = 13.sp)
+                }
+            }
+        }
+        if (query.isBlank() && templates.isNotEmpty()) {
+            item { SourceLabel("Шаблоны") }
+            items(templates, key = { "tpl-${it.template.id}" }) { t ->
+                Card {
+                    Column(Modifier.fillMaxWidth().clickable { onTemplate(t) }) {
+                        Text(t.template.name, fontSize = 14.sp, color = Palette.Text)
+                        Text(
+                            "${t.lines.joinToString(", ") { "${it.product.name} ${fmt0(it.grams)} г" }} · ${fmt0(t.kcal)} ккал",
+                            fontSize = 11.sp, color = Palette.Muted, maxLines = 2,
+                        )
+                    }
                 }
             }
         }
@@ -363,6 +404,8 @@ private fun ProductRow(p: ProductEntity, onClick: () -> Unit) {
             Text(p.name, fontSize = 14.sp, color = Palette.Text)
             Text(
                 listOfNotNull(
+                    if (p.kind == ProductKind.DISH) "блюдо" else null,
+                    if (p.source == ProductSource.USDA) "справочное" else null,
                     p.brand,
                     "на 100 г: ${fmt0(p.kcal100)} ккал · Б ${fmt1(p.protein100)} · Ж ${fmt1(p.fat100)} · У ${fmt1(p.carbs100)}",
                     if (!p.verified) "не проверено" else null,
@@ -479,6 +522,7 @@ class ProductDraft(from: ProductEntity?, prefillName: String) {
     var fat by mutableStateOf(from?.fat100?.let(::fmtInput).orEmpty())
     var carbs by mutableStateOf(from?.carbs100?.let(::fmtInput).orEmpty())
     var fiber by mutableStateOf(from?.fiber100?.let(::fmtInput).orEmpty())
+    var swell by mutableStateOf(from?.swellK?.let(::fmtInput).orEmpty())
     var source = from?.source ?: ProductSource.MANUAL
     var externalId = from?.externalId
     /** Ккал в карточке OFF пересчитаны из кДж — показать при сверке. */
@@ -494,6 +538,7 @@ class ProductDraft(from: ProductEntity?, prefillName: String) {
             if ((parseDecimal(v) ?: -1.0) < 0) add(n)
         }
         if (fiber.isNotBlank() && (parseDecimal(fiber) ?: -1.0) < 0) add("Клетчатка")
+        if (swell.isNotBlank() && (parseDecimal(swell) ?: 0.0) <= 1.0) add("Разбухание (больше 1)")
         portions.forEachIndexed { i, (l, g) -> if (l.isBlank() || (parseDecimal(g) ?: 0.0) <= 0) add("Порция ${i + 1}") }
     }
 
@@ -519,9 +564,10 @@ class ProductDraft(from: ProductEntity?, prefillName: String) {
         fat100 = parseDecimal(fat)!!,
         carbs100 = parseDecimal(carbs)!!,
         fiber100 = parseDecimal(fiber),
-        swellK = original?.swellK,
-        swellKMin = original?.swellKMin,
-        swellKMax = original?.swellKMax,
+        swellK = parseDecimal(swell),
+        // диапазон из справочника остаётся, пока коэффициент не меняли руками
+        swellKMin = original?.swellKMin?.takeIf { parseDecimal(swell) == original.swellK },
+        swellKMax = original?.swellKMax?.takeIf { parseDecimal(swell) == original.swellK },
         source = source,
         externalId = externalId,
         verified = verified,
@@ -637,6 +683,7 @@ fun ProductFormScreen(
             }
         }
         item { Field("Клетчатка", draft.fiber, KeyboardType.Decimal) { draft.fiber = it } }
+        item { Field("Разбухание при варке, раз (крупы, макароны)", draft.swell, KeyboardType.Decimal) { draft.swell = it } }
         item { Text("Порции — первая по умолчанию", fontFamily = Fonts.Mono, fontSize = 11.sp, letterSpacing = 1.sp, color = Palette.Muted) }
         items(draft.portions.size) { i ->
             val (label, grams) = draft.portions[i]

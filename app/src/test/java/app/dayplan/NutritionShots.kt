@@ -148,4 +148,29 @@ class NutritionShots {
         }
         compose.onRoot().captureRoboImage(File(out, "add_reference.png").path)
     }
+
+    @Test
+    fun dishEditor() {
+        fun p(id: Long, name: String, k: Double, pr: Double, f: Double, c: Double, swell: Double? = null, verified: Boolean = true) =
+            app.dayplan.nutrition.data.ProductEntity(id = id, name = name, kcal100 = k, protein100 = pr, fat100 = f, carbs100 = c,
+                swellK = swell, swellKMin = swell?.let { 2.5 }, swellKMax = swell?.let { 3.0 }, source = "manual", verified = verified, updatedAt = 0)
+        val lines = listOf(
+            app.dayplan.nutrition.data.DishLine(p(1, "Куриная грудка", 110.0, 21.0, 2.5, 0.0), 797.0),
+            app.dayplan.nutrition.data.DishLine(p(2, "Рис басмати", 340.0, 9.3, 0.0, 75.3, 2.8), 150.0),
+            app.dayplan.nutrition.data.DishLine(p(3, "Морковь", 41.0, 1.0, 0.0, 9.7, verified = false), 195.0),
+        )
+        val pots = listOf(app.dayplan.nutrition.data.CookwareEntity(1, "Кастрюля 3 л", 900.0))
+        val d = app.dayplan.nutrition.ui.DishDraft(0, "Грудка с рисом и морковью", lines, app.dayplan.nutrition.domain.YieldMethod.SWELL, 2312.0, 1, null, "2030-02-09")
+        compose.setContent {
+            DayPlanTheme {
+                Column {
+                    app.dayplan.nutrition.ui.DishEditorScreen(d, pots, {}, { _, _ -> }, {}, null, {}, Modifier.weight(1f))
+                    BottomTabs(Tab.FOOD) {}
+                }
+            }
+        }
+        compose.onRoot().captureRoboImage(File(out, "dish_swell.png").path)
+        compose.runOnIdle { d.method = app.dayplan.nutrition.domain.YieldMethod.WEIGHED }
+        compose.onRoot().captureRoboImage(File(out, "dish_weighed.png").path)
+    }
 }

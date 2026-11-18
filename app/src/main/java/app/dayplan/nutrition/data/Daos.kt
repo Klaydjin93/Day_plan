@@ -126,6 +126,54 @@ interface LogDao {
 
     @Query("SELECT * FROM log_entry WHERE id = :id")
     suspend fun byId(id: Long): LogEntryEntity?
+
+    @Query("SELECT * FROM log_entry WHERE product_id = :productId ORDER BY date, created_at")
+    suspend fun forProduct(productId: Long): List<LogEntryEntity>
+}
+
+@Dao
+interface DishDao {
+    @Upsert
+    suspend fun upsert(row: DishEntity)
+
+    @Query("SELECT * FROM dish WHERE product_id = :productId")
+    suspend fun get(productId: Long): DishEntity?
+
+    @Query("DELETE FROM dish_ingredient WHERE dish_id = :dishId")
+    suspend fun deleteIngredients(dishId: Long)
+
+    @Insert
+    suspend fun insertIngredients(rows: List<DishIngredientEntity>)
+
+    @Query("SELECT * FROM dish_ingredient WHERE dish_id = :dishId ORDER BY position")
+    suspend fun ingredients(dishId: Long): List<DishIngredientEntity>
+
+    @Query("SELECT * FROM cookware ORDER BY name")
+    suspend fun cookware(): List<CookwareEntity>
+
+    @Insert
+    suspend fun insertCookware(row: CookwareEntity): Long
+
+    @Query("DELETE FROM cookware WHERE id = :id")
+    suspend fun deleteCookware(id: Long)
+}
+
+@Dao
+interface TemplateDao {
+    @Insert
+    suspend fun insert(row: TemplateEntity): Long
+
+    @Insert
+    suspend fun insertItems(rows: List<TemplateItemEntity>)
+
+    @Query("SELECT * FROM template ORDER BY name")
+    suspend fun all(): List<TemplateEntity>
+
+    @Query("SELECT * FROM template_item WHERE template_id = :templateId ORDER BY id")
+    suspend fun items(templateId: Long): List<TemplateItemEntity>
+
+    @Query("DELETE FROM template WHERE id = :id")
+    suspend fun delete(id: Long)
 }
 
 @Dao
