@@ -43,6 +43,8 @@ class ReferenceTest {
         add("off", "4690228034428", "4690228034428", "Творог обезжиренный", "Простоквашино", 55.3)
         add("off", "4600000000099", "4600000000099", "Йогурт", null, 66.0)
         add("usda", "168877", null, "Рис белый длиннозёрный, сухой", null, 365.0, swell = 2.8)
+        add("chat", "chat-09", null, "Грудка с рисом и морковью", null, 103.9)
+        add("off", "4600000000111", "4600000000111", "Рис с курицей и морковью", "Магнит", 140.0)
         ref = ReferenceDb(refSql)
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), NutritionDatabase::class.java).allowMainThreadQueries().build()
         repo = NutritionRepo(db) { ref }
@@ -86,14 +88,28 @@ class ReferenceTest {
 
     @Test
     fun usdaIsAdoptedOnceWithSwell() = runBlocking {
-        val r = repo.findReference("рис").single()
-        val a = repo.adoptUsda(r)
+        val r = repo.findReference("рис белый").single()
+        val a = repo.adoptReference(r)
         assertEquals(ProductSource.USDA, a.source)
         assertTrue(a.verified)
         assertEquals(2.8, a.swellK!!, 0.0)
-        assertEquals(a.id, repo.adoptUsda(r).id)
-        assertTrue(repo.findReference("рис").isEmpty())
-        assertEquals("Рис белый длиннозёрный, сухой", repo.findProducts("рис").single().name)
+        assertEquals(a.id, repo.adoptReference(r).id)
+        assertTrue(repo.findReference("рис белый").isEmpty())
+        assertEquals("Рис белый длиннозёрный, сухой", repo.findProducts("рис белый").single().name)
+    }
+
+    @Test
+    fun myDishesComeFirstAndAreAdoptedWithoutLabelCheck() = runBlocking {
+        val found = repo.findReference("рис морков")
+        assertEquals(listOf("chat", "off"), found.map { it.source })
+        val mine = found.first()
+        assertTrue(mine.adoptsDirectly)
+        val a = repo.adoptReference(mine)
+        assertEquals(ProductSource.CHAT, a.source)
+        assertEquals("chat-09", a.externalId)
+        assertTrue(a.verified)
+        assertEquals(a.id, repo.adoptReference(mine).id)
+        assertEquals(listOf("off"), repo.findReference("рис морков").map { it.source })
     }
 
     @Test
@@ -121,6 +137,11 @@ class ReferenceTest {
         assertTrue(hits.isNotEmpty())
         assertTrue(hits.all { it.name.lowercase().contains("творог") || (it.brand ?: "").lowercase().contains("творог") })
         assertTrue(real.search("куриная грудка").any { it.isUsda })
+        assertEquals(12, real.meta("chat_count")?.toInt())
+        val kotletum = real.search("котлетум")
+        assertEquals(listOf("Котлетум (грудка, яйцо, сыр)", "Котлетум v2 (грудка, яйцо, сыр Брест)"), kotletum.map { it.name })
+        assertTrue(kotletum.all { it.isChat })
+        assertEquals(5.85, real.search("плов пса").single().carbs, 0.0)
         val code = hits.first { it.barcode != null }.barcode!!
         assertEquals(code, real.byBarcode(listOf(code))?.barcode)
     }

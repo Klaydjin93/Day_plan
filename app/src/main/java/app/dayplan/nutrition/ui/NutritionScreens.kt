@@ -275,8 +275,15 @@ fun AddFoodScreen(
             )
         }
         items(results, key = { it.id }) { p -> ProductRow(p) { onPick(p) } }
+        val mine = refResults.filter { it.isChat }
         val usda = refResults.filter { it.isUsda }
-        val offline = refResults.filter { !it.isUsda }
+        val offline = refResults.filter { !it.adoptsDirectly }
+        if (mine.isNotEmpty()) {
+            item { SourceLabel("Мои блюда · расчёт из чата") }
+            items(mine, key = { "chat-${it.sourceId}" }) { r ->
+                ExternalRow(r.name, r.brand, r.kcal, r.protein, r.fat, r.carbs, "моё блюдо", Palette.Green) { onPickRef(r) }
+            }
+        }
         if (usda.isNotEmpty()) {
             item { SourceLabel("Справочник USDA · справочные значения") }
             items(usda, key = { "usda-${it.sourceId}" }) { r ->
@@ -405,7 +412,11 @@ private fun ProductRow(p: ProductEntity, onClick: () -> Unit) {
             Text(
                 listOfNotNull(
                     if (p.kind == ProductKind.DISH) "блюдо" else null,
-                    if (p.source == ProductSource.USDA) "справочное" else null,
+                    when (p.source) {
+                        ProductSource.USDA -> "справочное"
+                        ProductSource.CHAT -> "из чата"
+                        else -> null
+                    },
                     p.brand,
                     "на 100 г: ${fmt0(p.kcal100)} ккал · Б ${fmt1(p.protein100)} · Ж ${fmt1(p.fat100)} · У ${fmt1(p.carbs100)}",
                     if (!p.verified) "не проверено" else null,

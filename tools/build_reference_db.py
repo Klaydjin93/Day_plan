@@ -107,7 +107,7 @@ def off_rows(raw):
     return list(best.values())
 
 
-def build(off, usda_items, out_path, off_note):
+def build(off, usda_items, out_path, off_note, dishes=()):
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     if os.path.exists(out_path):
         os.remove(out_path)
@@ -117,7 +117,7 @@ def build(off, usda_items, out_path, off_note):
         CREATE TABLE ref_product (
           id INTEGER PRIMARY KEY,
           source TEXT NOT NULL,            -- off | usda
-          source_id TEXT NOT NULL,         -- код OFF или fdcId USDA
+          source_id TEXT NOT NULL,         -- код OFF, fdcId USDA или chat-NN (мои блюда)
           barcode TEXT,
           name TEXT NOT NULL,
           brand TEXT,
@@ -137,6 +137,13 @@ def build(off, usda_items, out_path, off_note):
             (str(it["fdc_id"]), it["name_ru"], search_key(it["name_ru"], None), it["kcal"], it["protein"], it["fat"], it["carbs"],
              it.get("fiber"), it.get("swell_k"), it.get("swell_k_min"), it.get("swell_k_max")),
         )
+    # мои блюда из чата: КБЖУ на 100 г готового, берутся в свою базу без сверки
+    for it in dishes:
+        db.execute(
+            "INSERT INTO ref_product (source, source_id, barcode, name, brand, search_key, kcal, protein, fat, carbs, fiber) "
+            "VALUES ('chat', ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?)",
+            (it["id"], it["name"], search_key(it["name"], None), it["kcal"], it["protein"], it["fat"], it["carbs"], it.get("fiber")),
+        )
     for c, name, brand, kcal, p, f, carbs, fiber, from_kj, _ in off:
         db.execute(
             "INSERT INTO ref_product (source, source_id, barcode, name, brand, search_key, kcal, protein, fat, carbs, fiber, kcal_from_kj) "
@@ -147,6 +154,7 @@ def build(off, usda_items, out_path, off_note):
         "built_at": time.strftime("%Y-%m-%d"),
         "off_count": str(len(off)),
         "usda_count": str(len(usda_items)),
+        "chat_count": str(len(dishes)),
         "off_source": off_note,
         "off_license": "Open Database License (ODbL) — Open Food Facts contributors",
         "usda_source": "USDA FoodData Central SR Legacy, CC0 1.0",
@@ -163,15 +171,17 @@ def main():
     ap.add_argument("--off", default=OFF_URL, help="food.parquet OFF или уже извлечённые российские товары")
     ap.add_argument("--cache", default=None, help="куда сохранить извлечённые российские товары (parquet)")
     ap.add_argument("--usda", default=os.path.join(HERE, "usda_ref.json"))
+    ap.add_argument("--dishes", default=os.path.join(HERE, "my_dishes.json"))
     ap.add_argument("--out", default=OUT)
     a = ap.parse_args()
     t = time.time()
     raw = extract_off(a.off, a.cache)
     off = off_rows(raw)
     usda = json.load(open(a.usda, encoding="utf-8"))["items"]
-    meta = build(off, usda, a.out, "Open Food Facts food.parquet (Hugging Face), " + time.strftime("%Y-%m-%d"))
+    dishes = json.load(open(a.dishes, encoding="utf-8"))["items"] if os.path.exists(a.dishes) else []
+    meta = build(off, usda, a.out, "Open Food Facts food.parquet (Hugging Face), " + time.strftime("%Y-%m-%d"), dishes)
     size = os.path.getsize(a.out)
-    print(f"Российских товаров в выгрузке: {len(raw)}, с полным КБЖУ: {len(off)}; USDA: {len(usda)}")
+    print(f"Российских товаров в выгрузке: {len(raw)}, с полным КБЖУ: {len(off)}; USDA: {len(usda)}; мои блюда: {len(dishes)}")
     print(f"{a.out}: {size / 1024 / 1024:.1f} МБ, {time.time() - t:.0f} с; {meta['built_at']}")
 
 

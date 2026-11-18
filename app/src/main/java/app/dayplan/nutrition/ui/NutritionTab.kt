@@ -294,9 +294,9 @@ fun NutritionTab(
             onScan = { scanFor(r.meal) },
             refResults = refResults,
             onPickRef = { ref ->
-                if (ref.isUsda) {
+                if (ref.adoptsDirectly) {
                     scope.launch {
-                        val p = withContext(Dispatchers.IO) { repo.adoptUsda(ref) }
+                        val p = withContext(Dispatchers.IO) { repo.adoptReference(ref) }
                         version++
                         openPick(p, r.meal)
                     }
@@ -374,9 +374,9 @@ fun NutritionTab(
             onScan = { scanForIngredient(r.dish) },
             refResults = refResults,
             onPickRef = { ref ->
-                if (ref.isUsda) {
+                if (ref.adoptsDirectly) {
                     scope.launch {
-                        val p = withContext(Dispatchers.IO) { repo.adoptUsda(ref) }
+                        val p = withContext(Dispatchers.IO) { repo.adoptReference(ref) }
                         version++
                         addToDish(r.dish, p)
                     }

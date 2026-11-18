@@ -1,7 +1,8 @@
 name: reference-db
 
 # Справочная база приложения (app/src/main/assets/reference.db):
-# российские товары Open Food Facts с полным КБЖУ + справочник USDA (tools/usda_ref.json).
+# российские товары Open Food Facts с полным КБЖУ + справочник USDA (tools/usda_ref.json)
+# + мои блюда из чата (tools/my_dishes.json).
 # Собирается на серверах GitHub: полная выгрузка OFF — около 8 ГБ, читаются только нужные столбцы.
 # Результат — артефакт сборки; в репозиторий база кладётся обычным коммитом после проверки.
 # Запуск: изменение скрипта или списка USDA, вручную (на main), раз в месяц (на main).
@@ -10,6 +11,7 @@ on:
     paths:
       - tools/build_reference_db.py
       - tools/usda_ref.json
+      - tools/my_dishes.json
       - .github/workflows/reference-db.yml
   workflow_dispatch:
   schedule:

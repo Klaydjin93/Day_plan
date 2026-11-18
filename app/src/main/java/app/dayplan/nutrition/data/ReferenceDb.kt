@@ -6,7 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.os.Build
 import java.io.File
 
-/** Запись справочной базы: российский товар Open Food Facts (офлайн) или продукт USDA. */
+/** Запись справочной базы: российский товар Open Food Facts (офлайн), продукт USDA или моё блюдо из чата. */
 data class RefProduct(
     val source: String,
     val sourceId: String,
@@ -24,13 +24,16 @@ data class RefProduct(
     val swellKMax: Double? = null,
 ) {
     val isUsda: Boolean get() = source == ProductSource.USDA
+    val isChat: Boolean get() = source == ProductSource.CHAT
+    /** USDA и мои блюда берутся в свою базу сразу; товар OFF — только после сверки с этикеткой. */
+    val adoptsDirectly: Boolean get() = isUsda || isChat
 
     fun toOff() = OffProduct(barcode ?: sourceId, name, brand, kcal, protein, fat, carbs, fiber, kcalFromKj)
 }
 
 interface ReferenceSource {
     fun byBarcode(codes: List<String>): RefProduct?
-    /** Каждое слово запроса должно встретиться в названии или бренде. Сначала USDA, потом OFF. */
+    /** Каждое слово запроса должно встретиться в названии или бренде. Сначала мои блюда, потом USDA, потом OFF. */
     fun search(query: String, limit: Int = 40): List<RefProduct>
 }
 
@@ -53,7 +56,7 @@ class ReferenceDb(private val db: SQLiteDatabase) : ReferenceSource {
         val where = words.joinToString(" AND ") { "search_key LIKE ?" }
         val args = words.map { "%$it%" }.toTypedArray()
         return db.rawQuery(
-            "SELECT $COLS FROM ref_product WHERE $where ORDER BY source = 'usda' DESC, length(name), name LIMIT $limit",
+            "SELECT $COLS FROM ref_product WHERE $where ORDER BY CASE source WHEN 'chat' THEN 0 WHEN 'usda' THEN 1 ELSE 2 END, length(name), name LIMIT $limit",
             args,
         ).use { c -> buildList { while (c.moveToNext()) add(c.row()) } }
     }

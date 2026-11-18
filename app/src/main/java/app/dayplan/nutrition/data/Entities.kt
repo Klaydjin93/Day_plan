@@ -29,6 +29,8 @@ object ProductSource {
     const val USDA = "usda"
     const val MANUAL = "manual"
     const val DISH = "dish"
+    /** Блюдо, посчитанное в чате с тренером: КБЖУ на 100 г готового. */
+    const val CHAT = "chat"
 }
 
 /** Карточка продукта или блюда, значения на 100 г. */

@@ -160,22 +160,25 @@ class NutritionRepo(private val db: NutritionDatabase, refProvider: () -> Refere
         if (found.isEmpty()) return found
         val codes = found.mapNotNull { it.barcode }.flatMap { Barcodes.variants(it) }
         val owned = if (codes.isEmpty()) emptySet() else db.products().ownedBarcodes(codes).toSet()
-        val usdaIds = found.filter { it.isUsda }.map { it.sourceId }
-        val adopted = if (usdaIds.isEmpty()) emptySet() else db.products().ownedExternal(ProductSource.USDA, usdaIds).toSet()
+        val adopted = found.filter { it.adoptsDirectly }.groupBy { it.source }.flatMap { (source, rs) ->
+            db.products().ownedExternal(source, rs.map { it.sourceId }).map { source to it }
+        }.toSet()
         return found.filter { r ->
-            if (r.isUsda) r.sourceId !in adopted else Barcodes.variants(r.barcode ?: "").none { it in owned }
+            if (r.adoptsDirectly) (r.source to r.sourceId) !in adopted else Barcodes.variants(r.barcode ?: "").none { it in owned }
         }
     }
 
     /** Продукт USDA переносится в свою базу как справочный (проверенный), один раз. */
-    suspend fun adoptUsda(r: RefProduct, now: Long = System.currentTimeMillis()): ProductEntity {
-        db.products().byExternal(ProductSource.USDA, r.sourceId)?.let { return it }
+    /** Запись USDA или моё блюдо из чата → карточка своей базы (проверенная); повторный выбор возвращает ту же. */
+    suspend fun adoptReference(r: RefProduct, now: Long = System.currentTimeMillis()): ProductEntity {
+        require(r.adoptsDirectly) { "товар OFF берётся через сверку с этикеткой" }
+        db.products().byExternal(r.source, r.sourceId)?.let { return it }
         val id = saveProduct(
             ProductEntity(
                 name = r.name, kind = ProductKind.GENERIC,
                 kcal100 = r.kcal, protein100 = r.protein, fat100 = r.fat, carbs100 = r.carbs, fiber100 = r.fiber,
                 swellK = r.swellK, swellKMin = r.swellKMin, swellKMax = r.swellKMax,
-                source = ProductSource.USDA, externalId = r.sourceId, verified = true, updatedAt = now,
+                source = r.source, externalId = r.sourceId, verified = true, updatedAt = now,
             ),
             emptyList(), emptyList(), now,
         )
