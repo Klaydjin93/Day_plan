@@ -1,0 +1,41 @@
+name: reference-db
+
+# Справочная база приложения (app/src/main/assets/reference.db):
+# российские товары Open Food Facts с полным КБЖУ + справочник USDA (tools/usda_ref.json).
+# Собирается на серверах GitHub: полная выгрузка OFF — около 8 ГБ, читаются только нужные столбцы.
+# Результат — артефакт сборки; в репозиторий база кладётся обычным коммитом после проверки.
+# Запуск: изменение скрипта или списка USDA, вручную (на main), раз в месяц (на main).
+on:
+  push:
+    paths:
+      - tools/build_reference_db.py
+      - tools/usda_ref.json
+      - .github/workflows/reference-db.yml
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 2 * *"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Сборка справочной базы
+        run: |
+          pip install duckdb
+          python3 tools/build_reference_db.py --cache "$RUNNER_TEMP/ru_raw.parquet"
+          ls -la app/src/main/assets/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: reference-db-${{ github.run_number }}
+          path: app/src/main/assets/reference.db

@@ -23,6 +23,9 @@ import app.dayplan.nutrition.data.NutritionDatabase
 import app.dayplan.nutrition.data.NutritionRepo
 import app.dayplan.nutrition.data.OffClient
 import app.dayplan.nutrition.data.OffProduct
+import app.dayplan.nutrition.data.OffSearch
+import app.dayplan.nutrition.data.RefProduct
+import app.dayplan.nutrition.data.ReferenceDb
 import app.dayplan.nutrition.data.ProductEntity
 import app.dayplan.nutrition.data.ProductPortionEntity
 import app.dayplan.nutrition.domain.Barcodes
@@ -66,7 +69,7 @@ fun NutritionTab(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val repo = remember { NutritionRepo(NutritionDatabase.get(context)) }
+    val repo = remember { NutritionRepo(NutritionDatabase.get(context)) { ReferenceDb.get(context) } }
     val off = remember { OffClient() }
     val scope = rememberCoroutineScope()
     var route by remember { mutableStateOf<Route>(Route.Day) }
@@ -75,6 +78,8 @@ fun NutritionTab(
     var entries by remember { mutableStateOf<List<LogEntryEntity>>(emptyList()) }
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<ProductEntity>>(emptyList()) }
+    var refResults by remember { mutableStateOf<List<RefProduct>>(emptyList()) }
+    var online by remember { mutableStateOf<OnlineState>(OnlineState.Idle) }
     var pick by remember { mutableStateOf<Pick?>(null) }
     var edit by remember { mutableStateOf<EditEntry?>(null) }
     var draft by remember { mutableStateOf<ProductDraft?>(null) }
@@ -96,7 +101,9 @@ fun NutritionTab(
     }
     LaunchedEffect(query, version, route) {
         if (route is Route.Add || route is Route.Link) results = withContext(Dispatchers.IO) { repo.findProducts(query) }
+        refResults = if (route is Route.Add && query.isNotBlank()) withContext(Dispatchers.IO) { repo.findReference(query) } else emptyList()
     }
+    LaunchedEffect(query) { online = OnlineState.Idle }
     LaunchedEffect(route) {
         val r = route
         if (r is Route.Form) {
@@ -184,6 +191,33 @@ fun NutritionTab(
             onNewProduct = { route = Route.Form(r.meal, FormMode.NEW, r, prefill = query.trim()) },
             onBack = { route = Route.Day },
             onScan = { scanFor(r.meal) },
+            refResults = refResults,
+            onPickRef = { ref ->
+                if (ref.isUsda) {
+                    scope.launch {
+                        val p = withContext(Dispatchers.IO) { repo.adoptUsda(ref) }
+                        version++
+                        openPick(p, r.meal)
+                    }
+                } else {
+                    route = Route.Form(r.meal, FormMode.CHECK_LABEL, r, off = ref.toOff())
+                }
+            },
+            online = online,
+            onSearchOnline = {
+                val q = query
+                online = OnlineState.Loading
+                scope.launch {
+                    val res = withContext(Dispatchers.IO) { off.search(q) }
+                    if (q == query) {
+                        online = when (res) {
+                            is OffSearch.Found -> OnlineState.Results(res.products)
+                            is OffSearch.Failed -> OnlineState.Failed(res.message)
+                        }
+                    }
+                }
+            },
+            onPickOnline = { o -> route = Route.Form(r.meal, FormMode.CHECK_LABEL, r, off = o) },
             modifier = modifier,
         )
         is Route.NotFound -> BarcodeNotFoundScreen(

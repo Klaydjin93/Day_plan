@@ -46,6 +46,7 @@ import app.dayplan.nutrition.data.ProductEntity
 import app.dayplan.nutrition.data.ProductKind
 import app.dayplan.nutrition.data.ProductPortionEntity
 import app.dayplan.nutrition.data.ProductSource
+import app.dayplan.nutrition.data.RefProduct
 import app.dayplan.nutrition.domain.Barcodes
 import app.dayplan.nutrition.domain.parseDecimal
 import app.dayplan.ui.Bullet
@@ -195,6 +196,11 @@ fun AddFoodScreen(
     modifier: Modifier = Modifier,
     hint: String? = null,
     onScan: (() -> Unit)? = null,
+    refResults: List<RefProduct> = emptyList(),
+    onPickRef: (RefProduct) -> Unit = {},
+    online: OnlineState? = null,
+    onSearchOnline: () -> Unit = {},
+    onPickOnline: (OffProduct) -> Unit = {},
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize().background(Palette.Bg),
@@ -212,12 +218,12 @@ fun AddFoodScreen(
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (onScan != null) {
-                    Button(onClick = onScan, colors = ButtonDefaults.buttonColors(containerColor = Palette.Body, contentColor = Palette.Bg)) {
-                        Text("Сканировать штрихкод")
+                    Button(onClick = onScan, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Palette.Body, contentColor = Palette.Bg)) {
+                        Text("Сканировать", maxLines = 1)
                     }
                 }
-                Button(onClick = onNewProduct, colors = ButtonDefaults.buttonColors(containerColor = Palette.Surface2, contentColor = Palette.Text)) {
-                    Text("+ Новый продукт")
+                Button(onClick = onNewProduct, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Palette.Surface2, contentColor = Palette.Text)) {
+                    Text("+ Новый продукт", maxLines = 1)
                 }
             }
         }
@@ -228,6 +234,79 @@ fun AddFoodScreen(
             )
         }
         items(results, key = { it.id }) { p -> ProductRow(p) { onPick(p) } }
+        val usda = refResults.filter { it.isUsda }
+        val offline = refResults.filter { !it.isUsda }
+        if (usda.isNotEmpty()) {
+            item { SourceLabel("Справочник USDA · справочные значения") }
+            items(usda, key = { "usda-${it.sourceId}" }) { r ->
+                ExternalRow(r.name, r.brand, r.kcal, r.protein, r.fat, r.carbs, "справочное", Palette.Muted) { onPickRef(r) }
+            }
+        }
+        if (offline.isNotEmpty()) {
+            item { SourceLabel("Open Food Facts · офлайн") }
+            items(offline, key = { "off-${it.sourceId}" }) { r ->
+                ExternalRow(r.name, r.brand, r.kcal, r.protein, r.fat, r.carbs, "сверить с этикеткой", Palette.Hema) { onPickRef(r) }
+            }
+        }
+        if (online != null && query.isNotBlank()) {
+            when (online) {
+                OnlineState.Idle -> item {
+                    TextButton(onClick = onSearchOnline, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                        Text("Искать «${query.trim()}» в Open Food Facts онлайн", color = Palette.Run, fontSize = 13.sp)
+                    }
+                }
+                OnlineState.Loading -> item { Text("Ищу в Open Food Facts…", fontSize = 13.sp, color = Palette.Muted) }
+                is OnlineState.Failed -> item { Text(online.message, fontSize = 13.sp, color = Palette.Thr) }
+                is OnlineState.Results -> {
+                    item { SourceLabel(if (online.products.isEmpty()) "Open Food Facts · онлайн: ничего" else "Open Food Facts · онлайн") }
+                    items(online.products, key = { "online-${it.code}-${it.name}" }) { o ->
+                        ExternalRow(
+                            o.name.orEmpty(), o.brand, o.kcal100, o.protein100, o.fat100, o.carbs100,
+                            if (o.complete) "сверить с этикеткой" else "нет части КБЖУ", Palette.Hema,
+                        ) { onPickOnline(o) }
+                    }
+                }
+            }
+        }
+        if (refResults.isNotEmpty() || online is OnlineState.Results) {
+            item {
+                Text(
+                    "Данные: Open Food Facts (ODbL), USDA FoodData Central (CC0).",
+                    fontSize = 10.sp, color = Palette.Faint, modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        }
+    }
+}
+
+/** Поиск в Open Food Facts онлайн — только по кнопке: у OFF лимиты запросов. */
+sealed interface OnlineState {
+    data object Idle : OnlineState
+    data object Loading : OnlineState
+    data class Results(val products: List<OffProduct>) : OnlineState
+    data class Failed(val message: String) : OnlineState
+}
+
+@Composable
+private fun SourceLabel(text: String) {
+    Text(text, fontFamily = Fonts.Mono, fontSize = 11.sp, letterSpacing = 1.sp, color = Palette.Muted, modifier = Modifier.padding(top = 6.dp))
+}
+
+@Composable
+private fun ExternalRow(
+    name: String, brand: String?, kcal: Double?, p: Double?, f: Double?, c: Double?,
+    tag: String, tagColor: Color, onClick: () -> Unit,
+) {
+    fun v(x: Double?, digits: Int) = x?.let { if (digits == 0) fmt0(it) else fmt1(it) } ?: "—"
+    Card {
+        Column(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+            Text(name, fontSize = 14.sp, color = Palette.Text)
+            Text(
+                listOfNotNull(brand, "на 100 г: ${v(kcal, 0)} ккал · Б ${v(p, 1)} · Ж ${v(f, 1)} · У ${v(c, 1)}").joinToString(" · "),
+                fontSize = 11.sp, color = Palette.Muted,
+            )
+            Text(tag, fontSize = 11.sp, color = tagColor)
+        }
     }
 }
 
@@ -464,7 +543,7 @@ class ProductDraft(from: ProductEntity?, prefillName: String) {
             source = ProductSource.OFF
             externalId = off.code
             kcalFromKj = off.kcalFromKj
-            barcodes.add(off.code)
+            Barcodes.normalize(off.code)?.let { barcodes.add(it) }
         }
     }
 }

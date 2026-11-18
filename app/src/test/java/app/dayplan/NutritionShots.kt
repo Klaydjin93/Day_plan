@@ -123,4 +123,29 @@ class NutritionShots {
             compose.onRoot().captureRoboImage(File(out, "barcode_$name.png").path)
         }
     }
+
+    @Test
+    fun addWithReference() {
+        val own = listOf(app.dayplan.nutrition.data.ProductEntity(id = 1, name = "Творог 5%", brand = "Савушкин", kcal100 = 121.0, protein100 = 17.0, fat100 = 5.0, carbs100 = 1.8, source = "manual", verified = true, updatedAt = 0))
+        val refs = listOf(
+            app.dayplan.nutrition.data.RefProduct("off", "4690228034428", "4690228034428", "Творог обезжиренный", "Простоквашино", 55.3, 10.5, 0.1, 3.0, null, false),
+            app.dayplan.nutrition.data.RefProduct("off", "4602014004683", "4602014004683", "Творог 9%", "Домик в деревне", 160.0, 16.0, 9.0, 3.0, null, false),
+        )
+        val online = app.dayplan.nutrition.ui.OnlineState.Results(listOf(
+            app.dayplan.nutrition.data.OffProduct("4627112680317", "Творог 5%", "Вкусвилл", 121.0, 16.0, 5.0, 3.0, null, false),
+            app.dayplan.nutrition.data.OffProduct("4610001997115", "творог", null, null, null, null, null, null, false),
+        ))
+        compose.setContent {
+            DayPlanTheme {
+                Column {
+                    app.dayplan.nutrition.ui.AddFoodScreen(
+                        title = "Добавить · Завтрак", query = "творог", onQuery = {}, results = own, onPick = {}, onNewProduct = {}, onBack = {},
+                        onScan = {}, refResults = refs, online = online, modifier = Modifier.weight(1f),
+                    )
+                    BottomTabs(Tab.FOOD) {}
+                }
+            }
+        }
+        compose.onRoot().captureRoboImage(File(out, "add_reference.png").path)
+    }
 }

@@ -1,0 +1,11 @@
+Данные справочной базы (app/src/main/assets/reference.db)
+
+Open Food Facts — https://world.openfoodfacts.org
+  База данных распространяется по лицензии Open Database License (ODbL) 1.0:
+  https://opendatacommons.org/licenses/odbl/1-0/
+  Содержимое — Database Contents License (DbCL) 1.0:
+  https://opendatacommons.org/licenses/dbcl/1-0/
+  Выгрузка российских товаров в reference.db — производная база и распространяется на тех же условиях (ODbL).
+
+USDA FoodData Central, SR Legacy — https://fdc.nal.usda.gov
+  Общественное достояние, CC0 1.0 Universal.

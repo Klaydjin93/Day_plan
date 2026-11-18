@@ -60,6 +60,15 @@ interface ProductDao {
     @Query("SELECT p.* FROM product p JOIN product_barcode b ON b.product_id = p.id WHERE b.barcode IN (:codes) LIMIT 1")
     suspend fun byBarcode(codes: List<String>): ProductEntity?
 
+    @Query("SELECT * FROM product WHERE source = :source AND external_id = :externalId LIMIT 1")
+    suspend fun byExternal(source: String, externalId: String): ProductEntity?
+
+    @Query("SELECT barcode FROM product_barcode WHERE barcode IN (:codes)")
+    suspend fun ownedBarcodes(codes: List<String>): List<String>
+
+    @Query("SELECT external_id FROM product WHERE source = :source AND external_id IN (:ids)")
+    suspend fun ownedExternal(source: String, ids: List<String>): List<String>
+
     @Query("SELECT * FROM product_barcode WHERE product_id = :productId ORDER BY created_at")
     suspend fun barcodes(productId: Long): List<ProductBarcodeEntity>
 

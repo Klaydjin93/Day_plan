@@ -42,7 +42,14 @@ sealed interface BarcodeLookup {
     data class NotFound(val code: String, val offError: String?) : BarcodeLookup
 }
 
-class NutritionRepo(private val db: NutritionDatabase) {
+/**
+ * refProvider вызывается лениво, при первом обращении к справочной базе (уже не в главном потоке):
+ * открытие справочной базы копирует файл из сборки.
+ */
+class NutritionRepo(private val db: NutritionDatabase, refProvider: () -> ReferenceSource? = { null }) {
+
+    private val ref: ReferenceSource? by lazy(refProvider)
+
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -129,9 +136,10 @@ class NutritionRepo(private val db: NutritionDatabase) {
     suspend fun linkBarcode(code: String, productId: Long, now: Long = System.currentTimeMillis()) =
         db.products().insertBarcodes(listOf(ProductBarcodeEntity(code, productId, now)))
 
-    /** Поиск по коду: своя база, затем онлайн Open Food Facts. */
+    /** Поиск по коду: своя база, офлайн-выгрузка Open Food Facts, затем онлайн Open Food Facts. */
     suspend fun lookupBarcode(code: String, off: (String) -> OffResult): BarcodeLookup {
         db.products().byBarcode(Barcodes.variants(code))?.let { return BarcodeLookup.Own(it) }
+        ref?.byBarcode(Barcodes.variants(code))?.let { return BarcodeLookup.Off(it.toOff().copy(code = code)) }
         var failure: String? = null
         for (v in Barcodes.variants(code)) {
             when (val r = off(v)) {
@@ -141,6 +149,37 @@ class NutritionRepo(private val db: NutritionDatabase) {
             }
         }
         return BarcodeLookup.NotFound(code, failure)
+    }
+
+    /**
+     * Справочная база по названию без того, что уже есть в своей: товары OFF с привязанным кодом
+     * и продукты USDA, уже перенесённые в свою базу, не повторяются.
+     */
+    suspend fun findReference(query: String): List<RefProduct> {
+        val found = ref?.search(query).orEmpty()
+        if (found.isEmpty()) return found
+        val codes = found.mapNotNull { it.barcode }.flatMap { Barcodes.variants(it) }
+        val owned = if (codes.isEmpty()) emptySet() else db.products().ownedBarcodes(codes).toSet()
+        val usdaIds = found.filter { it.isUsda }.map { it.sourceId }
+        val adopted = if (usdaIds.isEmpty()) emptySet() else db.products().ownedExternal(ProductSource.USDA, usdaIds).toSet()
+        return found.filter { r ->
+            if (r.isUsda) r.sourceId !in adopted else Barcodes.variants(r.barcode ?: "").none { it in owned }
+        }
+    }
+
+    /** Продукт USDA переносится в свою базу как справочный (проверенный), один раз. */
+    suspend fun adoptUsda(r: RefProduct, now: Long = System.currentTimeMillis()): ProductEntity {
+        db.products().byExternal(ProductSource.USDA, r.sourceId)?.let { return it }
+        val id = saveProduct(
+            ProductEntity(
+                name = r.name, kind = ProductKind.GENERIC,
+                kcal100 = r.kcal, protein100 = r.protein, fat100 = r.fat, carbs100 = r.carbs, fiber100 = r.fiber,
+                swellK = r.swellK, swellKMin = r.swellKMin, swellKMax = r.swellKMax,
+                source = ProductSource.USDA, externalId = r.sourceId, verified = true, updatedAt = now,
+            ),
+            emptyList(), emptyList(), now,
+        )
+        return db.products().byId(id)!!
     }
 
     // ---------- вес ----------
