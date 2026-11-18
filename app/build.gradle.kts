@@ -97,6 +97,8 @@ dependencies {
     implementation("androidx.room:room-ktx:2.8.5")
     ksp("androidx.room:room-compiler:2.8.5")
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    // сканер тянет старый androidx.fragment; registerForActivityResult требует 1.3.0+
+    implementation("androidx.fragment:fragment:1.9.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("androidx.room:room-testing:2.8.5")
