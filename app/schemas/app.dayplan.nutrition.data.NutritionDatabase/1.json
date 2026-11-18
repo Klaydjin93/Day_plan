@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "ddafdc57c3986cba7ba451099c795ed9",
+    "identityHash": "1e3eb0a137f034bd8efc289a7d8a6e3f",
     "entities": [
       {
         "tableName": "product",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `brand` TEXT, `barcode` TEXT, `kind` TEXT NOT NULL, `kcal_100` REAL NOT NULL, `protein_100` REAL NOT NULL, `fat_100` REAL NOT NULL, `carbs_100` REAL NOT NULL, `fiber_100` REAL, `swell_k` REAL, `swell_k_min` REAL, `swell_k_max` REAL, `source` TEXT NOT NULL, `external_id` TEXT, `verified` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `brand` TEXT, `search_key` TEXT NOT NULL, `barcode` TEXT, `kind` TEXT NOT NULL, `kcal_100` REAL NOT NULL, `protein_100` REAL NOT NULL, `fat_100` REAL NOT NULL, `carbs_100` REAL NOT NULL, `fiber_100` REAL, `swell_k` REAL, `swell_k_min` REAL, `swell_k_max` REAL, `source` TEXT NOT NULL, `external_id` TEXT, `verified` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
@@ -24,6 +24,12 @@
             "fieldPath": "brand",
             "columnName": "brand",
             "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "searchKey",
+            "columnName": "search_key",
+            "affinity": "TEXT",
+            "notNull": true
           },
           {
             "fieldPath": "barcode",
@@ -121,13 +127,13 @@
             "createSql": "CREATE INDEX IF NOT EXISTS `index_product_barcode` ON `${TABLE_NAME}` (`barcode`)"
           },
           {
-            "name": "index_product_name",
+            "name": "index_product_search_key",
             "unique": false,
             "columnNames": [
-              "name"
+              "search_key"
             ],
             "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_product_name` ON `${TABLE_NAME}` (`name`)"
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_product_search_key` ON `${TABLE_NAME}` (`search_key`)"
           }
         ]
       },
@@ -895,7 +901,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ddafdc57c3986cba7ba451099c795ed9')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '1e3eb0a137f034bd8efc289a7d8a6e3f')"
     ]
   }
 }

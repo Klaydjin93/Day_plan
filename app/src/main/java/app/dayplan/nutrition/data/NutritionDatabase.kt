@@ -29,6 +29,8 @@ abstract class NutritionDatabase : RoomDatabase() {
     abstract fun planImports(): PlanImportDao
     abstract fun dayShifts(): DayShiftDao
     abstract fun products(): ProductDao
+    abstract fun log(): LogDao
+    abstract fun weights(): WeightDao
 
     companion object {
         @Volatile

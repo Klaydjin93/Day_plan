@@ -6,6 +6,15 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+fun normalizeSearch(text: String): String = text.lowercase().replace('ё', 'е').trim()
+
+fun searchKeyOf(name: String, brand: String?): String = normalizeSearch(listOfNotNull(name, brand).joinToString(" "))
+
+/** Приёмы пищи — в порядке дня. */
+object Meals {
+    val ALL = listOf("Завтрак", "Обед", "Ужин", "Перекус", "После тренировки")
+}
+
 /** Тип карточки. */
 object ProductKind {
     const val GENERIC = "generic"
@@ -23,11 +32,13 @@ object ProductSource {
 }
 
 /** Карточка продукта или блюда, значения на 100 г. */
-@Entity(tableName = "product", indices = [Index("barcode"), Index("name")])
+@Entity(tableName = "product", indices = [Index("barcode"), Index("search_key")])
 data class ProductEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val brand: String? = null,
+    /** Название и бренд в нижнем регистре, ё → е: LIKE в SQLite не понижает регистр кириллицы. */
+    @ColumnInfo(name = "search_key") val searchKey: String = searchKeyOf(name, brand),
     val barcode: String? = null,
     val kind: String = ProductKind.GENERIC,
     @ColumnInfo(name = "kcal_100") val kcal100: Double,

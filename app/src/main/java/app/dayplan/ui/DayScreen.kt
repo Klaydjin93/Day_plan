@@ -108,7 +108,7 @@ private fun DateHeader(s: DaySnapshot?, isToday: Boolean, onPrev: () -> Unit, on
 }
 
 @Composable
-private fun NavButton(label: String, onClick: () -> Unit) {
+internal fun NavButton(label: String, onClick: () -> Unit) {
     TextButton(onClick = onClick) {
         Text(label, fontSize = 34.sp, color = Palette.Muted, fontWeight = FontWeight.Light)
     }
@@ -125,7 +125,7 @@ private fun WeekLine(s: DaySnapshot) {
 }
 
 @Composable
-private fun Card(accent: Color? = null, content: @Composable ColumnScope.() -> Unit) {
+internal fun Card(accent: Color? = null, content: @Composable ColumnScope.() -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -141,7 +141,7 @@ private fun Card(accent: Color? = null, content: @Composable ColumnScope.() -> U
 }
 
 @Composable
-private fun SectionLabel(text: String, color: Color, right: String? = null, rightColor: Color = Palette.Muted) {
+internal fun SectionLabel(text: String, color: Color, right: String? = null, rightColor: Color = Palette.Muted) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(text.uppercase(), fontFamily = Fonts.Mono, fontSize = 11.sp, letterSpacing = 1.2.sp, color = color, modifier = Modifier.weight(1f))
         if (right != null) Text(right, fontFamily = Fonts.Mono, fontSize = 12.sp, color = rightColor)
@@ -149,7 +149,7 @@ private fun SectionLabel(text: String, color: Color, right: String? = null, righ
 }
 
 @Composable
-private fun Bullet(text: String, color: Color = Palette.Text) {
+internal fun Bullet(text: String, color: Color = Palette.Text) {
     Row(Modifier.padding(top = 4.dp)) {
         Text("·", color = Palette.Muted, fontSize = 14.sp, modifier = Modifier.width(12.dp))
         Text(text, color = color, fontSize = 13.sp, lineHeight = 19.sp)

@@ -1,9 +1,11 @@
 package app.dayplan.nutrition.data
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import androidx.room.Upsert
 
 @Dao
@@ -28,6 +30,10 @@ interface PlanImportDao {
 
     @Upsert
     suspend fun upsert(row: PlanImportEntity)
+
+    /** Неделя плана, в которую попадает дата (недели идут ПН–ВС от week_start). */
+    @Query("SELECT * FROM plan_import WHERE week_start <= :date ORDER BY week_start DESC LIMIT 1")
+    suspend fun weekStartingOnOrBefore(date: String): PlanImportEntity?
 }
 
 @Dao
@@ -44,9 +50,75 @@ interface ProductDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(row: ProductEntity): Long
 
+    @Update
+    suspend fun update(row: ProductEntity)
+
     @Query("SELECT * FROM product WHERE id = :id")
     suspend fun byId(id: Long): ProductEntity?
 
     @Query("SELECT * FROM product WHERE barcode = :barcode ORDER BY verified DESC, updated_at DESC LIMIT 1")
     suspend fun byBarcode(barcode: String): ProductEntity?
+
+    /** Поиск по своей базе: сначала проверенные, потом по названию. key — уже нормализован. */
+    @Query("SELECT * FROM product WHERE search_key LIKE '%' || :key || '%' ORDER BY verified DESC, name LIMIT :limit")
+    suspend fun search(key: String, limit: Int = 50): List<ProductEntity>
+
+    /** Недавние: по последней записи в дневнике. */
+    @Query(
+        """
+        SELECT p.* FROM product p
+        JOIN (SELECT product_id, MAX(created_at) AS last_at FROM log_entry WHERE product_id IS NOT NULL GROUP BY product_id) l
+          ON l.product_id = p.id
+        ORDER BY l.last_at DESC LIMIT :limit
+        """,
+    )
+    suspend fun recent(limit: Int = 20): List<ProductEntity>
+
+    @Query("SELECT * FROM product ORDER BY updated_at DESC LIMIT :limit")
+    suspend fun latest(limit: Int = 20): List<ProductEntity>
+
+    @Insert
+    suspend fun insertPortions(rows: List<ProductPortionEntity>)
+
+    @Query("DELETE FROM product_portion WHERE product_id = :productId")
+    suspend fun deletePortions(productId: Long)
+
+    @Query("SELECT * FROM product_portion WHERE product_id = :productId ORDER BY is_default DESC, grams")
+    suspend fun portions(productId: Long): List<ProductPortionEntity>
+}
+
+@Dao
+interface LogDao {
+    @Insert
+    suspend fun insert(row: LogEntryEntity): Long
+
+    @Update
+    suspend fun update(row: LogEntryEntity)
+
+    @Delete
+    suspend fun delete(row: LogEntryEntity)
+
+    @Query("SELECT * FROM log_entry WHERE date = :date ORDER BY created_at")
+    suspend fun forDate(date: String): List<LogEntryEntity>
+
+    @Query("SELECT * FROM log_entry WHERE id = :id")
+    suspend fun byId(id: Long): LogEntryEntity?
+}
+
+@Dao
+interface WeightDao {
+    @Upsert
+    suspend fun upsert(row: WeightEntryEntity)
+
+    @Query("DELETE FROM weight_entry WHERE date = :date")
+    suspend fun delete(date: String)
+
+    @Query("SELECT * FROM weight_entry WHERE date BETWEEN :from AND :to ORDER BY date")
+    suspend fun between(from: String, to: String): List<WeightEntryEntity>
+
+    @Query("SELECT * FROM weight_entry ORDER BY date DESC LIMIT :limit")
+    suspend fun latest(limit: Int = 30): List<WeightEntryEntity>
+
+    @Query("SELECT * FROM weight_entry WHERE date = :date")
+    suspend fun forDate(date: String): WeightEntryEntity?
 }
