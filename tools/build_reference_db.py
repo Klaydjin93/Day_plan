@@ -105,6 +105,7 @@ def off_rows(raw):
 
 
 def build(off, usda_items, out_path, off_note):
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     if os.path.exists(out_path):
         os.remove(out_path)
     db = sqlite3.connect(out_path)

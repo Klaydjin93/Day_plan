@@ -32,7 +32,11 @@ jobs:
       - name: Сборка справочной базы
         run: |
           pip install duckdb
-          python3 tools/build_reference_db.py --cache "$RUNNER_TEMP/ru_raw.parquet"
+          # файл целиком быстрее, чем чтение по сети кусками (28 мин против пары минут)
+          curl -fL --retry 3 -o "$RUNNER_TEMP/food.parquet" \
+            https://huggingface.co/datasets/openfoodfacts/product-database/resolve/main/food.parquet
+          ls -la "$RUNNER_TEMP/food.parquet"
+          python3 tools/build_reference_db.py --off "$RUNNER_TEMP/food.parquet"
           ls -la app/src/main/assets/
 
       - uses: actions/upload-artifact@v7
