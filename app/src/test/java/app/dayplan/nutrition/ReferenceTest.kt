@@ -110,4 +110,18 @@ class ReferenceTest {
         assertNull(found[1].kcal100)
         assertTrue(OffClient.parseSearch("oops") is OffSearch.Failed)
     }
+
+    /** Настоящий файл из assets открывается кодом приложения: схема совпадает, поиск и коды работают. */
+    @Test
+    fun bundledReferenceDbOpens() {
+        val real = ReferenceDb.get(ApplicationProvider.getApplicationContext())
+            ?: throw AssertionError("нет app/src/main/assets/reference.db")
+        assertTrue((real.meta("off_count")?.toInt() ?: 0) > 1000)
+        val hits = real.search("творог")
+        assertTrue(hits.isNotEmpty())
+        assertTrue(hits.all { it.name.lowercase().contains("творог") || (it.brand ?: "").lowercase().contains("творог") })
+        assertTrue(real.search("куриная грудка").any { it.isUsda })
+        val code = hits.first { it.barcode != null }.barcode!!
+        assertEquals(code, real.byBarcode(listOf(code))?.barcode)
+    }
 }
