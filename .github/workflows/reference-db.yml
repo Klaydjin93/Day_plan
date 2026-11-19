@@ -1,0 +1,47 @@
+name: reference-db
+
+# Справочная база приложения (app/src/main/assets/reference.db):
+# российские товары Open Food Facts с полным КБЖУ + справочник USDA (tools/usda_ref.json)
+# + мои блюда из чата (tools/my_dishes.json).
+# Собирается на серверах GitHub: полная выгрузка OFF — около 8 ГБ, читаются только нужные столбцы.
+# Результат — артефакт сборки; в репозиторий база кладётся обычным коммитом после проверки.
+# Запуск: изменение скрипта или списка USDA, вручную (на main), раз в месяц (на main).
+on:
+  push:
+    paths:
+      - tools/build_reference_db.py
+      - tools/usda_ref.json
+      - tools/my_dishes.json
+      - .github/workflows/reference-db.yml
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 2 * *"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Сборка справочной базы
+        run: |
+          pip install duckdb
+          # файл целиком быстрее, чем чтение по сети кусками (28 мин против пары минут)
+          curl -fL --retry 3 -o "$RUNNER_TEMP/food.parquet" \
+            https://huggingface.co/datasets/openfoodfacts/product-database/resolve/main/food.parquet
+          ls -la "$RUNNER_TEMP/food.parquet"
+          python3 tools/build_reference_db.py --off "$RUNNER_TEMP/food.parquet"
+          ls -la app/src/main/assets/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: reference-db-${{ github.run_number }}
+          path: app/src/main/assets/reference.db

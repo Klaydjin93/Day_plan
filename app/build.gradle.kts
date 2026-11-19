@@ -6,6 +6,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("io.github.takahirom.roborazzi")
+    id("com.google.devtools.ksp")
+    id("androidx.room")
 }
 
 // Подпись релиза приходит из переменных окружения (GitHub Secrets в CI).
@@ -63,6 +65,15 @@ android {
             isIncludeAndroidResources = true
         }
     }
+
+    // схемы базы — ассеты debug-сборки: по ним тест миграции (Robolectric) создаёт прежние версии.
+    // В релизный APK не попадают.
+    sourceSets.getByName("debug").assets.srcDir("$projectDir/schemas")
+}
+
+room {
+    // схемы версий базы лежат в репозитории: по ним пишутся и проверяются миграции
+    schemaDirectory("$projectDir/schemas")
 }
 
 kotlin {
@@ -82,8 +93,15 @@ dependencies {
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    implementation("androidx.room:room-runtime:2.8.5")
+    implementation("androidx.room:room-ktx:2.8.5")
+    ksp("androidx.room:room-compiler:2.8.5")
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    // сканер тянет старый androidx.fragment; registerForActivityResult требует 1.3.0+
+    implementation("androidx.fragment:fragment:1.9.1")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("androidx.room:room-testing:2.8.5")
     testImplementation("org.robolectric:robolectric:4.15.1")
     testImplementation("androidx.test:core:1.6.1")
     testImplementation(composeBom)

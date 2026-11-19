@@ -61,17 +61,37 @@
 ```
 
 Неизвестные поля игнорируются, поэтому формат можно расширять, не ломая установленное приложение.
+Строка `schema` остаётся `plan-day/1`: версия 0.1.0 сравнивает её строго.
+
+Необязательные поля для модуля питания (с версии 0.2.0):
+
+```jsonc
+"week": { "nutrition": {"kcal_avg": 2221} },           // среднее ккал недели по плану
+"nutrition": {
+  "targets": {                                          // смысл каждой цели; нет блока — цели без смысла
+    "kcal":      {"mode": "target", "tol_pct": 5},      // цель с коридором ±
+    "protein_g": {"mode": "min"},                       // минимум
+    "fat_g":     {"mode": "target", "tol_pct": 5, "max": 75},  // цель, коридор и жёсткий потолок
+    "carbs_g":   {"mode": "target", "tol_pct": 5}
+  },
+  "fuel_for": "2026-11-22"                              // день заправляет сессию этой даты
+},
+"report": [{"item": "Вес утром", "when": "утро", "auto": "weight"}]  // weight | nutrition — отмечается сам
+```
+
+Цели питания при загрузке копируются в базу приложения (`nutrition.db`) и живут дольше файла плана.
+Более старая версия недели (по `generated`) цели не перезаписывает.
 
 ## Разработка
 
 ```bash
 ./gradlew assembleDebug            # APK
-./gradlew testDebugUnitTest        # тесты
+./gradlew testDebugUnitTest        # тесты (логика плана и модуля питания: --tests 'app.dayplan.nutrition.*')
 # снимки экрана и виджета (Robolectric + Roborazzi) на своём файле плана:
 PLAN_JSON=/путь/к/plan.json PLAN_DATES=2026-10-27,2026-10-28 SHOT_DIR=/tmp/shots \
   ./gradlew recordRoborazziDebug --tests 'app.dayplan.*Shots'
 ```
 
-Стек: Kotlin, Jetpack Glance 1.1 (виджет), Jetpack Compose (приложение), kotlinx.serialization. minSdk 26.
+Стек: Kotlin, Jetpack Glance 1.1 (виджет), Jetpack Compose (приложение), kotlinx.serialization, Room 2.8 (база модуля питания, схемы версий — в `app/schemas/`). minSdk 26.
 
 Шрифты: Bebas Neue и IBM Plex (SIL Open Font License 1.1, тексты лицензий — в `licenses/`). В Bebas Neue нет кириллицы, поэтому он используется только для цифр.

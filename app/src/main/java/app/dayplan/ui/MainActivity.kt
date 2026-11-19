@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.IntentCompat
@@ -25,6 +26,10 @@ import app.dayplan.data.ChecklistStore
 import app.dayplan.data.DaySnapshot
 import app.dayplan.data.PlanStore
 import app.dayplan.data.StoredPlan
+import app.dayplan.nutrition.data.NutritionDatabase
+import app.dayplan.nutrition.data.NutritionSync
+import app.dayplan.nutrition.ui.NutritionTab
+import app.dayplan.nutrition.ui.WeightTab
 import app.dayplan.system.MidnightScheduler
 import app.dayplan.widget.WidgetRefresher
 import kotlinx.coroutines.Dispatchers
@@ -82,7 +87,13 @@ class MainActivity : ComponentActivity() {
 
     private fun runImport(block: (PlanStore) -> PlanStore.ImportResult) {
         lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) { block(PlanStore(this@MainActivity)) }
+            val result = withContext(Dispatchers.IO) {
+                block(PlanStore(this@MainActivity)).also { r ->
+                    if (r is PlanStore.ImportResult.Ok) {
+                        NutritionSync(NutritionDatabase.get(applicationContext)).syncPlan(r.stored.plan, r.stored.importedAt)
+                    }
+                }
+            }
             when (result) {
                 is PlanStore.ImportResult.Error -> message.value = result.message
                 is PlanStore.ImportResult.Ok -> {
@@ -107,6 +118,7 @@ class MainActivity : ComponentActivity() {
         var followToday by remember { mutableStateOf(true) }
         var plans by remember { mutableStateOf<List<StoredPlan>>(emptyList()) }
         var snapshot by remember { mutableStateOf<DaySnapshot?>(null) }
+        var tab by rememberSaveable { mutableStateOf(Tab.DAY) }
         val snackbar = remember { SnackbarHostState() }
 
         val requested = requestedDate.value
@@ -141,31 +153,58 @@ class MainActivity : ComponentActivity() {
             followToday = d == AppClock.today()
         }
 
-        Scaffold(containerColor = Palette.Bg, snackbarHost = { SnackbarHost(snackbar) }) { padding ->
-            DayScreen(
-                snapshot = snapshot,
-                isToday = date == AppClock.today(),
-                plans = plans,
-                onPrev = { go(date.minusDays(1)) },
-                onNext = { go(date.plusDays(1)) },
-                onToday = { go(AppClock.today()) },
-                onImport = { openDocument.launch(arrayOf("application/json", "text/json", "text/plain", "application/octet-stream")) },
-                onToggle = { key, checked ->
-                    lifecycleScope.launch {
-                        withContext(Dispatchers.IO) { ChecklistStore(this@MainActivity).set(key, checked) }
+        Scaffold(
+            containerColor = Palette.Bg,
+            snackbarHost = { SnackbarHost(snackbar) },
+            bottomBar = { BottomTabs(tab) { tab = it } },
+        ) { padding ->
+            val isToday = date == AppClock.today()
+            when (tab) {
+                Tab.DAY -> {
+                    DayScreen(
+                        snapshot = snapshot,
+                        isToday = date == AppClock.today(),
+                        plans = plans,
+                        onPrev = { go(date.minusDays(1)) },
+                        onNext = { go(date.plusDays(1)) },
+                        onToday = { go(AppClock.today()) },
+                        onImport = { openDocument.launch(arrayOf("application/json", "text/json", "text/plain", "application/octet-stream")) },
+                        onToggle = { key, checked ->
+                            lifecycleScope.launch {
+                                withContext(Dispatchers.IO) { ChecklistStore(this@MainActivity).set(key, checked) }
+                                dataVersion.intValue++
+                                WidgetRefresher.refreshAll(applicationContext)
+                            }
+                        },
+                        onDelete = { file ->
+                            lifecycleScope.launch {
+                                withContext(Dispatchers.IO) { PlanStore(this@MainActivity).delete(file) }
+                                dataVersion.intValue++
+                                WidgetRefresher.refreshAll(applicationContext)
+                            }
+                        },
+                        modifier = Modifier.padding(padding),
+                    )
+                }
+                Tab.FOOD -> NutritionTab(
+                    date = date, isToday = isToday,
+                    onPrev = { go(date.minusDays(1)) }, onNext = { go(date.plusDays(1)) }, onToday = { go(AppClock.today()) },
+                    modifier = Modifier.padding(padding),
+                    onChecklistChanged = {
                         dataVersion.intValue++
                         WidgetRefresher.refreshAll(applicationContext)
-                    }
-                },
-                onDelete = { file ->
-                    lifecycleScope.launch {
-                        withContext(Dispatchers.IO) { PlanStore(this@MainActivity).delete(file) }
+                    },
+                )
+                Tab.WEIGHT -> WeightTab(
+                    date = date, isToday = isToday,
+                    onPrev = { go(date.minusDays(1)) }, onNext = { go(date.plusDays(1)) }, onToday = { go(AppClock.today()) },
+                    onChecklistChanged = {
                         dataVersion.intValue++
                         WidgetRefresher.refreshAll(applicationContext)
-                    }
-                },
-                modifier = Modifier.padding(padding),
-            )
+                    },
+                    modifier = Modifier.padding(padding),
+                )
+            }
         }
     }
 }

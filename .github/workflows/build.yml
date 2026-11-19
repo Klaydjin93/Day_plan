@@ -25,7 +25,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
 
       - name: Тесты логики
-        run: ./gradlew testDebugUnitTest --tests 'app.dayplan.PlanLogicTest'
+        run: ./gradlew testDebugUnitTest --tests 'app.dayplan.PlanLogicTest' --tests 'app.dayplan.nutrition.*'
 
       - name: Версия
         run: |

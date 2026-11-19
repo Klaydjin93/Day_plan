@@ -4,12 +4,20 @@
     <!-- Перерисовать виджет после перезагрузки телефона -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Open Food Facts: поиск карточки по штрихкоду -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="false"
         android:theme="@style/Theme.DayPlan">
+
+        <!-- модуль сканера Google Play-сервисов скачивается при установке, а не при первом скане -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="barcode_ui" />
 
         <activity
             android:name=".ui.MainActivity"
