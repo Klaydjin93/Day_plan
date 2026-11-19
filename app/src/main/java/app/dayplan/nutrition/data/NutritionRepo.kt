@@ -6,6 +6,8 @@ import app.dayplan.data.ChecklistStore
 import app.dayplan.data.DayLookup
 import app.dayplan.data.PlanStore
 import app.dayplan.model.Nutrition
+import app.dayplan.nutrition.domain.ExportEntry
+import app.dayplan.nutrition.domain.ExportInput
 import app.dayplan.nutrition.domain.Barcodes
 import app.dayplan.nutrition.domain.DayGoals
 import app.dayplan.nutrition.domain.GoalsMapper
@@ -184,6 +186,31 @@ class NutritionRepo(private val db: NutritionDatabase, refProvider: () -> Refere
         )
         return db.products().byId(id)!!
     }
+
+    // ---------- итог дня ----------
+
+    /** Всё для текста итога: цели, записи, вес. Сам текст собирает DayExport. */
+    suspend fun exportInput(date: LocalDate, appVersion: String): ExportInput {
+        val row = db.dayTargets().forDate(date.toString())
+        val view = targets(date)
+        val plan = row?.let { db.planImports().get(it.weekId) }
+        val w = weightView(date)
+        return ExportInput(
+            date = date,
+            dayType = view?.type,
+            planLabel = row?.let { listOfNotNull(it.weekId, plan?.planVersion).joinToString(" ") },
+            goals = view?.goals,
+            shiftedFrom = view?.takeIf { it.shifted }?.let { LocalDate.parse(it.originDate) },
+            entries = entries(date).map { ExportEntry(it.meal, it.productName, it.grams, it.kcal, it.protein, it.fat, it.carbs, it.productVerified) },
+            meals = Meals.ALL,
+            weightKg = w.today?.kg,
+            weightAvg7 = w.rolling,
+            appVersion = appVersion,
+        )
+    }
+
+    suspend fun recordExport(date: LocalDate, text: String, now: Long = System.currentTimeMillis()) =
+        db.dayExports().insert(DayExportEntity(date = date.toString(), exportedAt = now, text = text))
 
     // ---------- вес ----------
 

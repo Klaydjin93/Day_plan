@@ -1,5 +1,10 @@
 package app.dayplan.nutrition.ui
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,6 +53,8 @@ import app.dayplan.nutrition.data.ProductPortionEntity
 import app.dayplan.nutrition.data.ProductSource
 import app.dayplan.nutrition.data.RefProduct
 import app.dayplan.nutrition.data.TemplateView
+import app.dayplan.nutrition.domain.Portions
+import app.dayplan.nutrition.domain.PortionOption
 import app.dayplan.nutrition.domain.Barcodes
 import app.dayplan.nutrition.domain.parseDecimal
 import app.dayplan.ui.Bullet
@@ -59,6 +66,7 @@ import app.dayplan.ui.SectionLabel
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private val DDMM: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM")
@@ -107,6 +115,7 @@ fun NutritionDayScreen(
     onEntry: (LogEntryEntity) -> Unit,
     modifier: Modifier = Modifier,
     onSaveTemplate: ((meal: String, entries: List<LogEntryEntity>) -> Unit)? = null,
+    onExport: (() -> Unit)? = null,
 ) {
     val total = LogMath.total(entries)
     LazyColumn(
@@ -144,6 +153,13 @@ fun NutritionDayScreen(
                     targets.notes.forEach { Bullet(it, Palette.Muted) }
                 }
             }
+        }
+        if (onExport != null) item {
+            OutlinedButton(
+                onClick = onExport, modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(1.dp, Palette.Border),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Palette.Text),
+            ) { Text("Итог для чата") }
         }
         items(Meals.ALL) { meal -> MealCard(meal, entries.filter { it.meal == meal }, onAdd, onEntry, onSaveTemplate = onSaveTemplate) }
         val other = entries.filter { it.meal !in Meals.ALL }
@@ -444,7 +460,7 @@ internal fun BackTitle(title: String, onBack: () -> Unit) {
 @Composable
 fun PortionDialog(
     product: ProductEntity,
-    portions: List<ProductPortionEntity>,
+    portions: List<PortionOption>,
     initialGrams: Double?,
     confirmLabel: String,
     onConfirm: (grams: Double) -> Unit,
@@ -453,23 +469,86 @@ fun PortionDialog(
     onDelete: (() -> Unit)? = null,
     extra: @Composable (() -> Unit)? = null,
 ) {
-    val start = initialGrams ?: portions.firstOrNull { it.isDefault }?.grams ?: 100.0
-    var text by remember { mutableStateOf(fmtInput(start)) }
-    val grams = parseDecimal(text)?.takeIf { it > 0 }
+    // Режим «порции» — если у продукта есть своя порция; «всё блюдо» одно не повод: 1 × кастрюля — редкий случай.
+    val matched = initialGrams?.let { Portions.match(it, portions) }
+    val defaultPortion = portions.firstOrNull { it.isDefault && !it.wholeDish } ?: portions.firstOrNull { !it.wholeDish }
+    var byPortions by remember {
+        mutableStateOf(if (initialGrams == null) defaultPortion != null else matched != null)
+    }
+    var option by remember { mutableStateOf(matched?.first ?: defaultPortion ?: portions.firstOrNull()) }
+    var countText by remember { mutableStateOf(fmtCount(matched?.second ?: 1.0)) }
+    var gramsText by remember { mutableStateOf(fmtInput(initialGrams ?: defaultPortion?.grams ?: 100.0)) }
+
+    val count = parseDecimal(countText)?.takeIf { it > 0 }
+    val grams = if (byPortions) option?.let { o -> count?.let { Portions.grams(o, it) } } else parseDecimal(gramsText)?.takeIf { it > 0 }
+
+    fun switchTo(portionsMode: Boolean) {
+        if (portionsMode == byPortions) return
+        if (portionsMode) {
+            // из граммов в порции: если вес ровно ложится в порцию — показать её число, иначе 1
+            val m = parseDecimal(gramsText)?.let { Portions.match(it, portions) }
+            if (m != null) { option = m.first; countText = fmtCount(m.second) } else countText = "1"
+        } else {
+            grams?.let { gramsText = fmtInput(it) }
+        }
+        byPortions = portionsMode
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Palette.Surface,
         title = { Text(product.name, fontSize = 17.sp, color = Palette.Text) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = text, onValueChange = { text = it }, singleLine = true,
-                    label = { Text("Граммы") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                )
                 if (portions.isNotEmpty()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Chip("Порции", selected = byPortions) { switchTo(true) }
+                        Chip("Граммы", selected = !byPortions) { switchTo(false) }
+                    }
+                }
+                if (byPortions && option != null) {
+                    val o = option!!
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        portions.forEach { p -> Chip("${p.label} · ${fmt0(p.grams)} г") { text = fmtInput(p.grams) } }
+                        portions.forEach { p ->
+                            Chip("${p.label} · ${fmt0(p.grams)} г", selected = p == o) {
+                                if (p != o) { option = p; countText = if (p.wholeDish) fmtCount(0.25) else "1" }
+                            }
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        TextButton(onClick = { countText = fmtCount(((count ?: o.step) - o.step).coerceAtLeast(o.step)) }) {
+                            Text("−", fontSize = 20.sp, color = Palette.Text)
+                        }
+                        OutlinedTextField(
+                            value = countText, onValueChange = { countText = it }, singleLine = true,
+                            label = { Text("Сколько порций") }, modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        )
+                        TextButton(onClick = { countText = fmtCount((count ?: 0.0) + o.step) }) {
+                            Text("+", fontSize = 20.sp, color = Palette.Text)
+                        }
+                    }
+                    if (o.wholeDish) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(0.25, 0.5, 0.75).forEach { q ->
+                                Chip("${Portions.countLabel(q)} блюда", selected = count != null && abs(count - q) < 1e-6) { countText = fmtCount(q) }
+                            }
+                        }
+                    }
+                    Text(
+                        grams?.let { "= ${fmt0(it)} г" } ?: "Введи число порций больше нуля",
+                        fontSize = 12.sp, color = if (grams == null) Palette.Hema else Palette.Muted,
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = gramsText, onValueChange = { gramsText = it }, singleLine = true,
+                        label = { Text("Граммы") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    )
+                    if (portions.isNotEmpty()) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            portions.forEach { p -> Chip("${p.label} · ${fmt0(p.grams)} г") { gramsText = fmtInput(p.grams) } }
+                        }
                     }
                 }
                 val n = grams?.let { LogMath.snapshot(product, it) }
@@ -491,6 +570,54 @@ fun PortionDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена", color = Palette.Muted) } },
     )
+}
+
+/** Итог дня для чата: короткий или с продуктами; копировать или отправить в другое приложение. */
+@Composable
+fun ExportDialog(
+    short: String,
+    full: String,
+    onCopy: (String) -> Unit,
+    onShare: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var withProducts by remember { mutableStateOf(false) }
+    val text = if (withProducts) full else short
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Palette.Surface,
+        title = { Text("Итог для чата", fontSize = 17.sp, color = Palette.Text) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Chip("Итог", selected = !withProducts) { withProducts = false }
+                    Chip("Итог + продукты", selected = withProducts) { withProducts = true }
+                }
+                Text(
+                    text, fontFamily = Fonts.Mono, fontSize = 11.sp, lineHeight = 15.sp, color = Palette.Text,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp)
+                        .background(Palette.Surface2, RoundedCornerShape(8.dp))
+                        .verticalScroll(rememberScrollState())
+                        .padding(10.dp),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onCopy(text) }) { Text("Копировать", color = Palette.Green) } },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { onShare(text) }) { Text("Отправить…", color = Palette.Run) }
+                TextButton(onClick = onDismiss) { Text("Закрыть", color = Palette.Muted) }
+            }
+        },
+    )
+}
+
+/** Число порций в поле: «1», «1,5», «0,25». */
+internal fun fmtCount(x: Double): String {
+    val r = Math.round(x * 100) / 100.0
+    return if (r == Math.round(r).toDouble()) Math.round(r).toString() else String.format(RU, "%.2f", r).trimEnd('0').trimEnd(',')
 }
 
 @Composable
@@ -743,7 +870,7 @@ fun ProductFormScreen(
 }
 
 @Composable
-private fun Field(
+internal fun Field(
     label: String,
     value: String,
     keyboard: KeyboardType = KeyboardType.Text,

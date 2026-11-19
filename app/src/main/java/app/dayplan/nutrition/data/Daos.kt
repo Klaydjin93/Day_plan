@@ -193,3 +193,12 @@ interface WeightDao {
     @Query("SELECT * FROM weight_entry WHERE date = :date")
     suspend fun forDate(date: String): WeightEntryEntity?
 }
+
+@Dao
+interface DayExportDao {
+    @Insert
+    suspend fun insert(row: DayExportEntity): Long
+
+    @Query("SELECT * FROM day_export WHERE date = :date ORDER BY exported_at DESC LIMIT 1")
+    suspend fun last(date: String): DayExportEntity?
+}

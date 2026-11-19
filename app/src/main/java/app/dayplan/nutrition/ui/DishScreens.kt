@@ -68,11 +68,18 @@ class DishDraft(
     var method by mutableStateOf(method)
     var gross by mutableStateOf(gross?.let(::fmtInput).orEmpty())
     var cookwareId by mutableStateOf(cookwareId)
+    /** Порции блюда: подпись и граммы строками, как ввели. Первая — по умолчанию. */
+    val portions = mutableStateListOf<Pair<String, String>>()
     /** Вопрос про масло уже задан в этой правке. */
     var oilAsked = false
 
     fun parsedLines(): List<DishLine>? =
         lines.map { (p, g) -> DishLine(p, parseDecimal(g)?.takeIf { it > 0 } ?: return null) }.takeIf { it.isNotEmpty() }
+
+    /** null — в порциях ошибка; пустые строки пропускаются. */
+    fun parsedPortions(): List<Pair<String, Double>>? = portions
+        .filter { (l, g) -> l.isNotBlank() || g.isNotBlank() }
+        .map { (l, g) -> l.trim().takeIf { it.isNotEmpty() }?.let { it to (parseDecimal(g)?.takeIf { x -> x > 0 } ?: return null) } ?: return null }
 
     fun hasOil(): Boolean = lines.any { (p, _) -> "масл" in normalizeSearch(p.name) }
 
@@ -91,6 +98,7 @@ class DishDraft(
             }
             val gross = if (method == YieldMethod.WEIGHED) v.dish.yieldG + (tare ?: 0.0) else null
             return DishDraft(v.product.id, v.product.name, v.lines, method, gross, v.dish.cookwareId, v.dish.batchOf, v.dish.cookedOn)
+                .withPortions(v)
         }
 
         /** Новая партия того же рецепта: те же продукты и граммы, вес готового — заново. */
@@ -98,7 +106,9 @@ class DishDraft(
             0, "${v.product.name.replace(BATCH_SUFFIX, "")} · ${today.format(DDMM)}", v.lines,
             if (v.dish.yieldMethod == YieldMethodCode.WEIGHED) YieldMethod.WEIGHED else YieldMethod.SWELL,
             null, v.dish.cookwareId, v.dish.batchOf ?: v.product.id, today.toString(),
-        )
+        ).withPortions(v)
+
+        private fun DishDraft.withPortions(v: DishView) = apply { v.portions.forEach { portions.add(it.label to fmtInput(it.grams)) } }
     }
 }
 
@@ -151,6 +161,7 @@ fun DishEditorScreen(
         if (draft.lines.isEmpty()) add("ингредиенты")
         else if (c == null) add("граммы ингредиентов")
         if (c != null && c.yieldGrams == null) add(if (draft.method == YieldMethod.WEIGHED) "вес готового больше веса посуды" else "вес готового")
+        if (draft.parsedPortions() == null) add("порции")
     }
     LazyColumn(
         modifier = modifier.fillMaxSize().background(Palette.Bg),
@@ -258,6 +269,26 @@ fun DishEditorScreen(
                         Text("Есть непроверенные ингредиенты — блюдо будет помечено «не проверено».", fontSize = 12.sp, color = Palette.Hema, modifier = Modifier.padding(top = 4.dp))
                     }
                 }
+            }
+        }
+        item { SectionLabel("Порции", Palette.Muted) }
+        item {
+            Text(
+                "Например, «контейнер · 350 г». «Всё блюдо» добавлять не нужно — при записи оно есть всегда: удобно взять ¼ или ½.",
+                fontSize = 12.sp, color = Palette.Muted,
+            )
+        }
+        items(draft.portions.size) { i ->
+            val (label, grams) = draft.portions[i]
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Field("Порция", label, modifier = Modifier.weight(2f)) { draft.portions[i] = it to grams }
+                Field("г", grams, KeyboardType.Decimal, Modifier.weight(1f)) { draft.portions[i] = label to it }
+                TextButton(onClick = { draft.portions.removeAt(i) }) { Text("✕", color = Palette.Muted) }
+            }
+        }
+        item {
+            TextButton(onClick = { draft.portions.add("" to "") }, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                Text("+ Порция", color = Palette.Run, fontSize = 13.sp)
             }
         }
         if (showErrors && errors.isNotEmpty()) {

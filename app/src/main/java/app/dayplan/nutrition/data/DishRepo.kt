@@ -13,7 +13,7 @@ data class DishLine(val product: ProductEntity, val grams: Double) {
     )
 }
 
-data class DishView(val product: ProductEntity, val dish: DishEntity, val lines: List<DishLine>)
+data class DishView(val product: ProductEntity, val dish: DishEntity, val lines: List<DishLine>, val portions: List<ProductPortionEntity> = emptyList())
 
 /** Что сохранить: состав, способ веса готового и сам вес. */
 data class DishInput(
@@ -25,6 +25,8 @@ data class DishInput(
     val cookwareId: Long?,
     val batchOf: Long?,
     val cookedOn: String?,
+    /** Порции блюда («контейнер», 350 г); null — не трогать сохранённые. */
+    val portions: List<Pair<String, Double>>? = null,
 )
 
 data class TemplateView(val template: TemplateEntity, val lines: List<DishLine>) {
@@ -38,7 +40,7 @@ class DishRepo(private val db: NutritionDatabase) {
         val dish = db.dishes().get(productId) ?: return null
         val product = db.products().byId(productId) ?: return null
         val lines = db.dishes().ingredients(productId).mapNotNull { i -> db.products().byId(i.productId)?.let { DishLine(it, i.grams) } }
-        return DishView(product, dish, lines)
+        return DishView(product, dish, lines, db.products().portions(productId))
     }
 
     /**
@@ -77,6 +79,10 @@ class DishRepo(private val db: NutritionDatabase) {
         )
         db.dishes().deleteIngredients(id)
         db.dishes().insertIngredients(input.lines.mapIndexed { i, l -> DishIngredientEntity(dishId = id, productId = l.product.id, grams = l.grams, position = i) })
+        input.portions?.let { ps ->
+            db.products().deletePortions(id)
+            if (ps.isNotEmpty()) db.products().insertPortions(ps.mapIndexed { i, (l, g) -> ProductPortionEntity(productId = id, label = l.trim(), grams = g, isDefault = i == 0) })
+        }
         id
     }
 

@@ -17,11 +17,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.sp
+import app.dayplan.nutrition.data.AutoChecks
 import app.dayplan.nutrition.data.BarcodeLookup
 import app.dayplan.nutrition.data.CookwareEntity
 import app.dayplan.nutrition.data.DishInput
 import app.dayplan.nutrition.data.DishRepo
 import app.dayplan.nutrition.data.ProductKind
+import app.dayplan.nutrition.domain.DayExport
+import app.dayplan.nutrition.domain.PortionOption
+import app.dayplan.nutrition.domain.Portions
 import app.dayplan.nutrition.data.TemplateView
 import app.dayplan.nutrition.data.DayTargetsView
 import app.dayplan.nutrition.data.LogEntryEntity
@@ -68,8 +72,8 @@ private sealed interface Route {
     ) : Route
 }
 
-private data class Pick(val product: ProductEntity, val portions: List<ProductPortionEntity>, val meal: String)
-private data class EditEntry(val entry: LogEntryEntity, val product: ProductEntity?, val portions: List<ProductPortionEntity>)
+private data class Pick(val product: ProductEntity, val portions: List<PortionOption>, val meal: String)
+private data class EditEntry(val entry: LogEntryEntity, val product: ProductEntity?, val portions: List<PortionOption>)
 
 @Composable
 fun NutritionTab(
@@ -79,6 +83,8 @@ fun NutritionTab(
     onNext: () -> Unit,
     onToday: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Итог скопирован — пункт чек-листа с auto: nutrition отмечен, виджету и «Дню» надо перечитать. */
+    onChecklistChanged: suspend () -> Unit = {},
 ) {
     val context = LocalContext.current
     val repo = remember { NutritionRepo(NutritionDatabase.get(context)) { ReferenceDb.get(context) } }
@@ -109,6 +115,23 @@ fun NutritionTab(
     var reapply by remember { mutableStateOf<Pair<Long, Int>?>(null) }
 
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+
+    var export by remember { mutableStateOf<Pair<String, String>?>(null) }
+
+    fun openExport() = scope.launch {
+        val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
+        val x = withContext(Dispatchers.IO) { repo.exportInput(date, version) }
+        export = DayExport.text(x, withProducts = false) to DayExport.text(x, withProducts = true)
+    }
+
+    /** Итог ушёл из приложения: запомнить текст, отметить пункт чек-листа. */
+    fun exported(text: String) = scope.launch {
+        withContext(Dispatchers.IO) {
+            repo.recordExport(date, text)
+            AutoChecks.mark(context, date, AutoChecks.NUTRITION)
+        }
+        onChecklistChanged()
+    }
 
     fun io(block: suspend () -> Unit) = scope.launch {
         withContext(Dispatchers.IO) { block() }
@@ -181,8 +204,15 @@ fun NutritionTab(
         }
     }
 
+    /** Порции карточки; у блюда добавляется «всё блюдо» — вес готового, чтобы записать ¼ или ½ кастрюли. */
+    suspend fun portionOptions(p: ProductEntity): List<PortionOption> {
+        val own = repo.portions(p.id).map { PortionOption(it.label, it.grams, it.isDefault) }
+        val whole = if (p.kind == ProductKind.DISH) dishRepo.dish(p.id)?.dish?.yieldG?.takeIf { it > 0 } else null
+        return own + listOfNotNull(whole?.let { PortionOption(Portions.WHOLE_DISH, it, wholeDish = true) })
+    }
+
     fun openPick(p: ProductEntity, meal: String) = scope.launch {
-        val portions = withContext(Dispatchers.IO) { repo.portions(p.id) }
+        val portions = withContext(Dispatchers.IO) { portionOptions(p) }
         pick = Pick(p, portions, meal)
     }
 
@@ -198,6 +228,7 @@ fun NutritionTab(
             val input = DishInput(
                 d.productId, d.name, c.lines, d.method, y,
                 if (d.method == app.dayplan.nutrition.domain.YieldMethod.WEIGHED) d.cookwareId else null, d.batchOf, d.cookedOn,
+                d.parsedPortions() ?: return@launch,
             )
             val (id, entries, product) = withContext(Dispatchers.IO) {
                 val id = dishRepo.save(input)
@@ -275,11 +306,12 @@ fun NutritionTab(
             onPrev = onPrev, onNext = onNext, onToday = onToday,
             onAdd = { meal -> query = ""; route = Route.Add(meal) },
             onSaveTemplate = { meal, items -> templateSave = meal to items },
+            onExport = { openExport() },
             onEntry = { e ->
                 scope.launch {
                     val (p, portions) = withContext(Dispatchers.IO) {
                         val p = e.productId?.let { repo.product(it) }
-                        p to (p?.let { repo.portions(it.id) } ?: emptyList())
+                        p to (p?.let { portionOptions(it) } ?: emptyList())
                     }
                     edit = EditEntry(e, p, portions)
                 }
@@ -400,7 +432,7 @@ fun NutritionTab(
                     scope.launch {
                         val saved = withContext(Dispatchers.IO) {
                             val id = repo.saveProduct(d.toEntity(verified), d.portionEntities(), d.barcodes.toList())
-                            repo.product(id)!! to repo.portions(id)
+                            repo.product(id)!!.let { it to portionOptions(it) }
                         }
                         version++
                         val meal = r.meal
@@ -422,6 +454,26 @@ fun NutritionTab(
 
     busy?.let { text ->
         AlertDialog(onDismissRequest = {}, confirmButton = {}, containerColor = Palette.Surface, text = { Text(text, color = Palette.Text) })
+    }
+
+    export?.let { (short, full) ->
+        ExportDialog(
+            short = short, full = full,
+            onCopy = { text ->
+                val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("Итог дня", text))
+                exported(text)
+                export = null
+                toast("Итог скопирован")
+            },
+            onShare = { text ->
+                val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, text)
+                context.startActivity(android.content.Intent.createChooser(send, "Итог дня"))
+                exported(text)
+                export = null
+            },
+            onDismiss = { export = null },
+        )
     }
 
     TemplateDialogs(

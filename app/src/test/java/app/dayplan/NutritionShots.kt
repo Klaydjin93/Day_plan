@@ -17,6 +17,9 @@ import app.dayplan.ui.DayPlanTheme
 import app.dayplan.ui.Tab
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.background
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
 import org.junit.Test
@@ -173,5 +176,51 @@ class NutritionShots {
         compose.onRoot().captureRoboImage(File(out, "dish_swell.png").path)
         compose.runOnIdle { d.method = app.dayplan.nutrition.domain.YieldMethod.WEIGHED }
         compose.onRoot().captureRoboImage(File(out, "dish_weighed.png").path)
+    }
+
+    @OptIn(com.github.takahirom.roborazzi.ExperimentalRoborazziApi::class)
+    @Test
+    fun portionsAndExport() {
+        val p = app.dayplan.nutrition.data.ProductEntity(id = 7, name = "Плов · 16.11", kind = "dish", kcal100 = 109.2, protein100 = 11.2, fat100 = 4.5, carbs100 = 5.9, source = "dish", verified = true, updatedAt = 0)
+        val options = listOf(
+            app.dayplan.nutrition.domain.PortionOption("контейнер", 350.0, isDefault = true),
+            app.dayplan.nutrition.domain.PortionOption(app.dayplan.nutrition.domain.Portions.WHOLE_DISH, 1990.0, wholeDish = true),
+        )
+        var state by androidx.compose.runtime.mutableStateOf(3)
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            DayPlanTheme {
+                androidx.compose.foundation.layout.Box(Modifier.background(app.dayplan.ui.Palette.Bg)) {
+                    when (state) {
+                        0 -> app.dayplan.nutrition.ui.PortionDialog(p, options, null, "Записать", {}, {})
+                        1 -> app.dayplan.nutrition.ui.PortionDialog(p, options, 497.5, "Сохранить", {}, {})
+                        2 -> app.dayplan.nutrition.ui.PortionDialog(p, options, 333.0, "Сохранить", {}, {})
+                        else -> app.dayplan.nutrition.ui.ExportDialog(
+                            short = SAMPLE, full = SAMPLE + "\n\nПродукты:\nзавтрак · Творог 5% · 200 г · 242 ккал · Б 34,0 · Ж 10,0 · У 3,6",
+                            onCopy = {}, onShare = {}, onDismiss = {},
+                        )
+                    }
+                }
+            }
+        }
+        // поле ввода в диалоге под Robolectric не даёт Compose «успокоиться» — часы двигаем вручную
+        listOf("portion_new", "portion_quarter", "portion_grams", "export").forEachIndexed { i, name ->
+            state = i
+            compose.mainClock.advanceTimeBy(1000)
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            com.github.takahirom.roborazzi.captureScreenRoboImage(File(out, "$name.png").path)
+        }
+    }
+
+    private companion object {
+        const val SAMPLE = """Питание · СБ 09.02 · отдых · заправка · план W98 v1
+Факт: 442 ккал · Б 39 г · Ж 20 г · У 26 г
+План: 2300 ккал ±5% · Б ≥190 г · Ж 60 г ±5% (≤75) · У ≥250 г
+Разница: −1858 ккал · Б −151 · Ж −40 · У −224
+Приёмы: завтрак 242 · обед 0 · ужин 0 · перекус 200 · после тренировки 0 (ккал)
+Непроверенные продукты: 1 запись, 200 ккал
+Вес: 100,4 кг · среднее 7 дн: 100,6 кг, из 2 замеров
+Перенос целей: нет
+Источник: План дня 0.1.0 (параллель с Lifesum)"""
     }
 }

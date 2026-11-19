@@ -190,6 +190,10 @@ class MainActivity : ComponentActivity() {
                     date = date, isToday = isToday,
                     onPrev = { go(date.minusDays(1)) }, onNext = { go(date.plusDays(1)) }, onToday = { go(AppClock.today()) },
                     modifier = Modifier.padding(padding),
+                    onChecklistChanged = {
+                        dataVersion.intValue++
+                        WidgetRefresher.refreshAll(applicationContext)
+                    },
                 )
                 Tab.WEIGHT -> WeightTab(
                     date = date, isToday = isToday,
